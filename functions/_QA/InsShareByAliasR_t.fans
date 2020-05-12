@@ -1,0 +1,38 @@
+// InsShareByAliasR_t(%Alias, %StDate:date; %Profile_t, %ProfileSh_t :int):int
+// -----------------------------------------
+// Вставка в БД финансового инструмента представленного во входящем DataSet - %Profile_t
+//  
+// EKS 05.2020
+
+// Хочешь узнать структуру таблицы %Profile_t вызови _QA->_GenRequizShare и в _QA._L2 получишь список полей с типами
+
+var dt, SHARE_ID, FIELDS, _QA_OPER, FACE_ID;
+
+//_QA_OPER := 186;
+FACE_ID  := clear(0);
+FIELDS   := List();
+TableClear(%Profile_t);
+
+if (isBlank(%StDate)) then
+    Dt := Date(Now)
+else
+    Dt := %StDate
+end;    
+    
+if (trim(lowercase(%Alias)) = lowercase('RusCloseProp-ETF01')) then
+    FACE_ID := _QA->ProduceFace_JurRusETFIssuerA_t(%Profile_t, Dt);
+    _QA->ProduceShare_RusCloseProp_ETF01_t(%ProfileSh_t, Dt);    
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-02')) then
+    dummy
+    //_QA->ProduceFace_JurRusEnergocap_HistDpt5_t(%Profile_t, Dt);
+else
+    raise('В библиотеке нет шаблона запрашиваемеого финансового инструмента '+ str(%Alias));
+end;
+
+try
+    SHARE_ID :=_QA->InsShare_t(%Profile_t);
+except
+    propagate;
+end;
+
+SHARE_ID;

@@ -1,0 +1,133 @@
+//InsClient_t(%FParams: int; Mess: str):int
+// --------------------------------------------------------
+// Если хотите вставить пассивный счет депо передавайте TYPE_=2
+//                                       активный счет депо передавайте TYPE_=1
+// Возвращаемое значение ID нового счета, либо NULL, если в процессе вставки счета возникла исключительная ситуация.
+// EKS 11.2019
+
+var Client_SELF_ID, TabOw, x_meta;
+// ----------------------------------------------------------------------------------
+    Mess := '';
+    x_meta := %FParams.___tOMETA;
+//================================================================================
+    Client_SELF_ID := Gen_ID( 'Данные', 'OD_CLIENTS_ID_GEN', 1 );
+    try
+        ExecSQL('Данные', [execute procedure OD_PR_INSERT_CLIENT
+                           ( :ID, :NUMBER, :TYPE_, :SUBTYPE, :FACE, :RELATION, :PARENT, :PLAN_ID, :IS_TERM, :IS_MANAGER, :IS_VOICE, :IS_PRIV, :IS_SOV, :IS_NZ, :IS_BCLIENT, 
+                             :STATE, :D_OPEN, :D_CLOSE, :Z_DATE, :OPER, :NAME, :LINK_NUMBER, :INCOME_MOD, :INCOME_ACC, :INCOME_ADR, :INCOME_REC, :INCOME_FACE, 
+                             :O_MAIL_MOD, :O_MAIL_ADR, :I_MAIL_MOD, :I_MAIL_ADR, :DD_DATE, :DD_NUM, :PLACE, :ISSUER, :TARIF, :EXTRA_INT, :EXTRA_TYPE )],
+            Client_SELF_ID,           %FParams._NUMBER,     %FParams._TYPE_,      %FParams._SUBTYPE,     %FParams._FACE,     %FParams._RELATION,
+            %FParams._PARENT ,        %FParams._PLAN_ID,    %FParams._IS_TERM ,   %FParams._IS_MANAGER , %FParams._IS_VOICE, %FParams._IS_PRIV ,    %FParams._IS_SOV ,    
+            %FParams._IS_NZ ,         %FParams._IS_BCLIENT, %FParams._STATE,                                          
+            %FParams._D_OPEN ,        %FParams._D_CLOSE,    %FParams._Z_DATE ,    %FParams._OPER ,       %FParams._NAME ,    %FParams._LINK_NUMBER, %FParams._INCOME_MOD, 
+            %FParams._INCOME_ACC ,    %FParams._INCOME_ADR, %FParams._INCOME_REC ,%FParams._INCOME_FACE,           
+            %FParams._O_MAIL_MOD,     %FParams._O_MAIL_ADR, %FParams._I_MAIL_MOD, %FParams._I_MAIL_ADR ,           
+            %FParams._DD_DATE,        %FParams._DD_NUM ,    %FParams._PLACE ,     %FParams._ISSUER ,     %FParams._TARIF ,   %FParams._EXTRA_INT,    %FParams._EXTRA_TYPE);
+            
+        ExecSQL('Данные', [ update OD_CLIENTS set D_OPEN=:O, BAL_ACC=:B, F_DATE=:F_DATE,TRANSIT=:TRANSIT,CLI_ORG=:CLI_ORG,USER_CODE=:USER_CODE where ID=:ID],
+                            %FParams._D_OPEN, %FParams._BAL_ACC, %FParams._F_DATE, %FParams._TRANSIT, %FParams._CLI_ORG, 
+                            %FParams._USER_CODE, Client_SELF_ID);
+        if %FParams._STATE=2 and not IsNull(%FParams._D_CLOSE) then 
+            ExecSQL('Данные', [update OD_CLIENTS set D_CLOSE=:C where ID=:ID], %FParams._D_CLOSE, Client_SELF_ID);
+        end;
+        
+        if ~isNull(%FParams.___tAFFILS) then
+            TabOw := %FParams.___tAFFILS;
+            if (TabOw.@recordcount>0) then
+                TabOw.@First;
+                While ~(TabOw.@EOF) do                    
+                    ExecSQL('Данные', [insert into OD_AFFILS(ID, CLIENT, FACE, RELATION, B_DATE, A_END, OPER, PERCENT_)
+                                       values(:ID, :CLIENT, :FACE, :RELATION, :B_DATE, :A_END, :OPER, :PERCENT_)], 
+                            gen_id('Данные', 'OD_AFFILS_ID_GEN', 1), Client_SELF_ID, TabOw._FACE, TabOw._RELATION, TabOw._B_DATE, TabOw._A_END, QA.OPER, TabOw._PERCENT_);
+                    TabOw.@Next;
+                End;
+            end;
+        end;
+        x_meta.@EDIT;
+        x_meta._ID := Client_SELF_ID;
+        x_meta.@POST;
+    except
+        Client_SELF_ID := clear(0);
+        x_meta.@EDIT;
+        x_meta._ID := Client_SELF_ID;
+        x_meta.@POST;
+        propagate;
+    end;
+    
+Client_SELF_ID;    
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+        {
+        :ID = 600 <Integer>
+        :NUMBER = SDP/NCC/ZZZZ2342 <String>
+        :TYPE_ = 2 <Integer>
+        :SUBTYPE = 122 <Integer>
+        :FACE = 5172238 <Integer>
+        :RELATION = 0 <Integer>
+        :PARENT = (null) <Integer>
+        :PLAN_ID = 4 <Integer>
+        :IS_TERM = T <FixedChar>
+        :IS_MANAGER = 1 <Integer>
+        :IS_VOICE = 1 <Integer>
+        :IS_PRIV = 0 <Integer>
+        :IS_SOV = 0 <Integer>
+        :IS_NZ = 0 <Integer>
+        :IS_BCLIENT = 0 <Integer>
+        :STATE = 0 <Integer>
+        :D_OPEN = (null) <SQLTimeStamp>
+        :D_CLOSE = (null) <SQLTimeStamp>
+        :Z_DATE = (null) <SQLTimeStamp>
+        :OPER = 186 <Integer>
+        :NAME = СЧЕТУС <String>
+        :LINK_NUMBER =  <String>
+        :INCOME_MOD = 1 <Integer>
+        :INCOME_ACC = (null) <Integer>
+        :INCOME_ADR = (null) <String>
+        :INCOME_REC = (null) <String>
+        :INCOME_FACE = (null) <Integer>
+        :O_MAIL_MOD = 1 <Integer>
+        :O_MAIL_ADR = C:\baag <String>
+        :I_MAIL_MOD = 8 <Integer>
+        :I_MAIL_ADR =  <String>
+        :DD_DATE = 11.11.2019 <SQLTimeStamp>
+        :DD_NUM = SU-01 <String>
+        :PLACE = (null) <Integer>
+        :ISSUER = (null) <Integer>
+        :TARIF =  <String>
+        :EXTRA_INT = 0 <Integer>
+        :EXTRA_TYPE = 0 <Integer>
+     
+execute procedure OD_PR_INSERT_CLIENT
+   ( 600, 'SDP/NCC/ZZZZ2342', 2, 122, 5172238, 0, null, 4, T, 1, 1, 0, 0, 0, 0, 0, null, null, null, 186, 'СЧЕТУС', '', 1, null, null, null, null, 1, 'C:\baag', 8, '', '11.11.2019', 'SU-01', null, null, '', 0, 0 )
+
+   
+update OD_CLIENTS set D_OPEN=:O, BAL_ACC=:B, F_DATE=:F_DATE,TRANSIT=:TRANSIT,CLI_ORG=:CLI_ORG,USER_CODE=:USER_CODE where ID=:ID
+
+:O = 15.11.2019 <SQLTimeStamp>
+:B = (null) <Integer>
+:F_DATE = 01.01.9999 <Date>
+:TRANSIT = (null) <Integer>
+:CLI_ORG = 51093 <Integer>
+:USER_CODE = (null) <String>
+:ID = 600 <Integer>
+
+
+ExecProc( 'OD_PR_INSERT_CLIENT', 'Данные', ID, NUMBER, TYPE_,
+ SUBTYPE, FACE, RELATION, PARENT, PLAN_ID, IS_TERM, IS_MANAGER, IS_VOICE,IS_PRIV,IS_SOV, IS_NZ,IS_BCLIENT,STATE, clear(0), clear(0), Z_DATE, __OPER_ID,
+ NAME, LINK_NUMBER, INCOME_MOD, INCOME_ACC, INCOME_ADR, INCOME_REC, INCOME_FACE, O_MAIL_MOD,
+ O_MAIL_ADR, I_MAIL_MOD, I_MAIL_ADR, DD_DATE, DD_NUM, PLACE, ISSUER, TARIF, EXTRA_INT, EXTRA_TYPE );
+ExecSQL('Данные', [update OD_CLIENTS set D_OPEN=:O, BAL_ACC=:B, F_DATE=:F_DATE,TRANSIT=:TRANSIT,CLI_ORG=:CLI_ORG,USER_CODE=:USER_CODE where ID=:ID], D_OPEN, BAL_ACC, F_DATE,TRANSIT,CLI_ORG,USER_CODE,ID);
+if STATE=2 and not IsNull(D_CLOSE) then 
+   ExecSQL('Данные', [update OD_CLIENTS set D_CLOSE=:C where ID=:ID], D_CLOSE, ID);
+end;
+        }

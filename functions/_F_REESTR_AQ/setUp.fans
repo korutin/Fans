@@ -1,0 +1,20 @@
+// Общая тестовая конфигурация для тест-функций модуля _F_REESTR_AQ
+// В базе данных создается окружение, которым будут пользоваться другие тест-функции модуля _F_REESTR_AQ
+// ПИФ, Пай, Управляющая компания
+// -----------------------------------------------------------------------------
+var RR0;
+// Нам понадобится один ПИФ
+RR0    := _QA->InsFaceByAlias_t('JurRusIssuer-01', date(_F_REESTR_AQ.BigBangMoment), _F_REESTR_AQ.__tFace_ETFIssuer);
+
+// -----------------------------------------------------------------------------
+// Открыть счет управляющей компании (ЮЛ: 'JurRusLtdUK-03') "выдаваемые инвестиционные паи" (ЛС: 'VP-01')
+
+// __tFace_BigUK, __tClient_GivePaiAcc, __tClient_EmiAcc, __tShare_ETF, __tFace_BigUK, __tFace_ETFIssuer : Int;
+//RR2    := _QA->InsFaceClientByAlias_t('JurRusLtdUK-03',  'VP-01',  Date(UKCreateMoment), Date(UKAccOpenMoment), ISSUER, __tFace_BigUK, __tClient_GivePaiAcc);
+//EMI_UK := int(ListVal(RR2,'CLIENT'));
+//UK     := int(ListVal(RR2,'FACE'));
+0
+
+
+
+

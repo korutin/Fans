@@ -1,0 +1,23 @@
+// TableToList(%T,%option:int):List
+// --------------------------------------------------------
+// %option = 0 -> пустые значения и поля начинающиеся с '__' из таблицы в списке нового элемента с пустым значением не создают, 
+//                         а просто пропускаются
+// %option = 1 -> пустые значения попадаются в список как пустые значения
+// EKS 01.2020
+var it, k, newL, L;
+k := 0;
+if %option=0 then
+    // пустые значения в списке не нужны
+    L:= TableRecordVal(%T);
+    newL := List();
+    While (k<ListCount(L)) do
+        it := ListGet(L, k);
+        if copy(Token(it,'=',1), 1,2)<>'__' and ~isBlank(Token(it,'=',2)) then
+                ListAdd(newL, it);
+        end;
+        inc(k);
+    End;
+else
+    newL := TableRecordVal(%T);
+end;
+newL;

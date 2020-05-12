@@ -1,0 +1,41 @@
+// InsFaceByAlias_t(%Alias, %StDate:date; %Profile_t:int):int
+// -----------------------------------------
+// Вставка в БД лица представленного во входящем DataSet - %Profile_t
+// В 
+// EKS 01.2020
+
+// Хочешь узнать структуру таблицы %Profile_t вызови _QA->GenRequizFace и в _QA._L2 получишь список полей с типами
+
+var dt, FACE_ID, FIELDS, _QA_OPER;
+
+_QA_OPER := 186;
+FACE_ID  := clear(0);
+FIELDS   := List();
+TableClear(%Profile_t);
+
+if (isBlank(%StDate)) then
+    Dt := Date(Now)
+else
+    Dt := %StDate
+end;    
+    
+   if (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-01')) then      _QA->ProduceFace_JurRusEnergocap_HistDpt3_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-02')) then      _QA->ProduceFace_JurRusEnergocap_HistDpt5_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-03')) then      _QA->ProduceFace_JurRusUK_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLukoilA-03')) then    _QA->ProduceFace_JurRusLukoila_HistDpt3_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdFin-04')) then     _QA->ProduceFace_JurRusAZHIO_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('IndvRusRez-01')) then       _QA->ProduceFace_IndvRus01_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('nkc-a')) then               _QA->ProduceFace_JurRusClearingOrgA_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('ndc-a')) then               _QA->ProduceFace_JurRusCentrDepA_t(%Profile_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusIssuer-01')) then     _QA->ProduceFace_JurRusETFIssuerA_t(%Profile_t, Dt);
+else
+    raise('В библиотеке нет шаблона счета депо с именем '+ str(%Alias));
+end;
+
+try
+    FACE_ID :=_QA->InsFace_t(%Profile_t);
+except
+    propagate;
+end;
+
+FACE_ID;

@@ -1,0 +1,72 @@
+// InsFaceClientByAlias_t(%Alias, %AliasCli:str; %StDate, %OpenDate:Date; %Issuer:int; %ProfileFace_t, %ProfileClient_t:int):List
+// -----------------------------------------
+// Вставка в БД счета и лица являющегося владельцем (FACE). Реквизиты вставляемого счета возвращаются через %ProfileClient_t, а реквизиты владельца через DataSet - %Profile_t
+// Возвращает пару (FACE, CLIENT)
+// EKS 03.2020
+
+// Хочешь узнать структуру таблицы %ProfileFace_t вызови _QA->GenRequizFace и в _QA._L2 получишь список полей с типами и именами предваренные заданным префиксом.
+
+var dt, DtCli, FACE_ID, CLIENT_ID, FIELDS, _QA_OPER, ROut,
+    LimNameAcc, s;
+
+_QA_OPER := 186;
+FACE_ID  := clear(0);
+FIELDS   := List();
+ROut     := List();
+TableClear(%ProfileFace_t);
+TableClear(%ProfileClient_t);
+
+if (isBlank(%StDate)) then
+    Dt := Date(Now)
+else
+    Dt := %StDate
+end;    
+
+if (isBlank(%OpenDate)) then
+    DtCli := Date(Now)
+else
+    DtCli := %OpenDate
+end;    
+    
+//Получаем шаблон владельца
+if (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-01')) then         _QA->ProduceFace_JurRusEnergocap_HistDpt3_t(%ProfileFace_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-02')) then      _QA->ProduceFace_JurRusEnergocap_HistDpt5_t(%ProfileFace_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdUK-03')) then      _QA->ProduceFace_JurRusUK_t(%ProfileFace_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLukoilA-03')) then    _QA->ProduceFace_JurRusLukoilA_HistDpt3_t(%ProfileFace_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('JurRusLtdFin-04')) then     _QA->ProduceFace_JurRusAZHIO_t(%ProfileFace_t, Dt);
+elsif (trim(lowercase(%Alias)) = lowercase('IndvRusRez-01')) then     _QA->ProduceFace_IndvRus01_t(%ProfileFace_t, Dt);
+else
+    raise('В библиотеке нет шаблона субъекта с именем '+ str(%Alias));
+end;
+
+//Получаем шаблон счета
+   if (trim(lowercase(%AliasCli)) = lowercase('OW-01')) then _QA->ProduceClientR_OW_t(%ProfileClient_t, DtCli);
+elsif (trim(lowercase(%AliasCli)) = lowercase('ND-01')) then _QA->ProduceClientR_ND_t(%ProfileClient_t, DtCli);
+elsif (trim(lowercase(%AliasCli)) = lowercase('VP-01')) then _QA->ProduceClientR_VP_t(%ProfileClient_t, DtCli);
+else
+    raise('В библиотеке нет шаблона счета депо с именем '+ str(%AliasCli));
+end;
+
+try
+    FACE_ID   := _QA->InsFace_t(%ProfileFace_t);
+    %ProfileClient_t.@EDIT;
+    %ProfileClient_t._FACE   := FACE_ID;
+    %ProfileClient_t._ISSUER := %Issuer;
+    %ProfileClient_t._D_OPEN := date(DtCli);
+    %ProfileClient_t._F_DATE := date('01.01.9999');
+    %ProfileClient_t._OPER   := _QA.OPER;
+    
+    LimNameAcc := 8;
+    s          := str(Extract('Данные', [select max(f_SuffixToInt(f_Left(c.NUMBER,9))) as FIELD_0 from OD_ACC_PLANS p left join OD_CLIENTS c on c.PLAN_ID=p.ID where p.WHOS=:WH and p.SYS_NAME='REESTR'], _QA.WHOS)+1);
+    While (Length(s)<LimNameAcc) do s := '0'+s; End;
+    %ProfileClient_t._NUMBER := copy(%ProfileClient_t._NUMBER, 1, 1) + s;
+    
+    %ProfileClient_t.@POST;
+    CLIENT_ID := _QA->InsClient_t(%ProfileClient_t);
+    ListAdd(ROut, 'FACE='+str(FACE_ID));
+    ListAdd(ROut, 'CLIENT='+str(CLIENT_ID));
+except    
+    propagate;
+end;
+
+ROut;

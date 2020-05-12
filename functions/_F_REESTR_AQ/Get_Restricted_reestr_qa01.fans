@@ -1,0 +1,346 @@
+// Get_Restricted_reestr_qa01
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Get_Restricted_reestr(%ACC_ID :int, %SHARE :int, %R_DATE:DateTime, %MX :int, %RMX :int, ZDL,ZDR,BLOCK,BEN_ZDR,BLOCK_5,BLOCK_CA,BLOCK_CL,ZALOG,BLIN :float; DogList :list; Obr_List:list ):float
+// Возвращаемое значение 0 - passed (тест прошел)
+//                       1 - не прошел
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed; 1 - error
+//                                      log      : список строк с ошибками
+var issueMoment, freezeMomentA1, freezeMomentA2, freezeMomentB, zalogMomentA, zalogerCreateMoment, owner1AccOpenMoment, owner2AccOpenMoment, UKCreateMoment, UKAccOpenMoment,
+    owner1CreateMoment, owner2CreateMoment, getRestMoment, 
+    RR1:=List(), RR2:=List(), RR12 := List(), RRF := List(), ZALOGER, ISSUER, DepoA, DepoB, EMI_UK, EMI_ETF, UK, FUND, SHARE, ID, DepoA_OWNER, DepoB_OWNER, c, Mess, ErrList, err_c, 
+    SE, SE1, SE21, SE22, SE3, SE4, SE5, SE6, RestA, RestB, 
+    ZDL_A, ZDR_A, BLOCK_A, BEN_ZDR_A, BLOCK_5_A, BLOCK_CA_A, BLOCK_CL_A, ZALOG_A, BLIN_A, DogList_A, Obr_List_A, Obr_List_A_et, Obr_List_et,
+    ZDL_B, ZDR_B, BLOCK_B, BEN_ZDR_B, BLOCK_5_B, BLOCK_CA_B, BLOCK_CL_B, ZALOG_B, BLIN_B, DogList_B, Obr_List_B, Obr_List_B_et,
+    D_ID, 
+    GROUND_DOC_BLOCK_A1, COMMENT_DOC_BLOCK_A1, GROUND_DOC_BLOCK_A2, COMMENT_DOC_BLOCK_A2, GROUND_DOC_BLOCK_A3, COMMENT_DOC_BLOCK_A3, GROUND_DOC_ZALOG;
+    
+var RestA_BL1_et, RestA_BL2_et, RestA_Z_et, RestB_BL_et, REST_et; 
+var logK;
+var QA_CODE := 'Get_Restricted_reestr_qa01', F_ID, SELF_ID, REG;
+
+// $meta begin
+var __tFace_Owner1  := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int));
+var __tFace_Owner2  := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int));
+var __tFace_Zaloger := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int));
+var __tFace_UK      := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int));
+var __tFace_ETF     := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int));
+
+var __tClient_OwnerAcc1  := Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, AFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int)), 
+    __tClient_OwnerAcc2  := Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, AFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int)), 
+    __tClient_GivePaiAcc := Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, AFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int)),
+    __tClient_EmiAcc     := Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, AFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int)),
+                  Affils := Table( RELATION int, FACE int, B_DATE date, A_END date);
+// $meta end
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Создание Лица с указанием его реквизитов напрямую
+     
+try
+
+    // Надо это безобразие будет также заменить
+    REG          := MyFace;                                                 // TO-DO (Сделать функцию, которая загружает в профиль типа __tFace данные из указанного лица в базе данных; указание через SELF_ID)
+    ISSUER       := 16748;
+    SHARE        := 10068;
+    SE           := List();                                                  // Список побочных эффектов (например ID-ки вспомогательных документов)
+    owner1CreateMoment  := DateTime('20.03.2020 10:00:00');                  // Дата/время включения первого владельца в справочники
+    owner2CreateMoment  := DateTime('20.03.2020 10:00:00');                  // Дата/время включения второго владельца в справочники
+    UKCreateMoment      := DateTime('20.03.2020 10:00:00');                  // Дата/время включения Управляющей компании в справочники
+    UKAccOpenMoment     := DateTime('20.03.2020 10:00:00');                  // Дата/время открытия счета УК
+    zalogerCreateMoment := DateTime('20.03.2020 10:00:00');                  // Дата/время включения будущего залогодержателя в справочники
+    owner1AccOpenMoment := DateTime('29.03.2020 15:00:00');                  // Дата/время открытия лицевого счета ПЕРВОГО владельца
+    owner2AccOpenMoment := DateTime('29.03.2020 15:00:00');                  // Дата/время открытия лицевого счета ВТОРОГО владельца
+    //UKAccOpenMoment     :=
+    issueMoment         := DateTime('29.03.2020 15:13:00');                  // Дата/время выдачи паев на счет владельца
+    freezeMomentA1      := DateTime('30.03.2020 09:12:00');                  // Дата/время блокировки1 паев на счете ПЕРВОГО владельца
+    freezeMomentA2      := DateTime('30.03.2020 09:30:00');                  // Дата/время блокировки2 паев на счете ПЕРВОГО владельца    
+    freezeMomentB       := DateTime('30.03.2020 10:15:00');                  // Дата/время блокировки паев на счете ВТОРОГО владельца    
+    zalogMomentA        := DateTime('30.03.2020 12:12:00');                  // Дата/время залога паев на счете ПЕРВОГО владельца    
+    getRestMoment       := DateTime('30.03.2020 23:00:00');                  // Дата/время на которое смотрим остаток по счету
+    RestA_BL1_et        := 3;
+    RestA_BL2_et        := 0.1;
+    RestA_Z_et          := 2.05;
+    RestB_BL_et         := 1.23333;
+    REST_et             := RestA_BL1_et + RestA_Z_et;
+    
+    GROUND_DOC_BLOCK_A1   := 'Постановление о наложении ареста на имущество должника б/н от 4 гот от РХ';
+    COMMENT_DOC_BLOCK_A1  := 'Постановление о наложении ареста на имущество должника б/н';
+    GROUND_DOC_BLOCK_A2   := 'п.3.88 утв. Приказом ФСФР России №13-65/пз от 30 июля 2013г';
+    COMMENT_DOC_BLOCK_A2  := '';
+    GROUND_DOC_BLOCK_A3   := 'Свидетельство о заражении COVID-19';
+    COMMENT_DOC_BLOCK_A3  := 'Запрос нотариуса 5-й в этом году';
+    GROUND_DOC_ZALOG      := 'Свидетельство о попадании в рабство';
+    
+    // -----------------------------------------------------------------------------
+    // Открыть лицевой счет первого владельцеа - юридического лица
+    RR1         := _QA->InsFaceClientByAlias_t('JurRusLtdFin-04', 'OW-01',  Date(owner1CreateMoment), Date(owner1AccOpenMoment), ISSUER, __tFace_Owner1, __tClient_OwnerAcc1);
+    DepoA       := int(ListVal(RR1,'CLIENT'));
+    DepoA_OWNER := int(ListVal(RR1,'FACE'));
+    // -----------------------------------------------------------------------------
+    // Открыть лицевой счет второго владельцеа - физического лица
+    RR12        := _QA->InsFaceClientByAlias_t('IndvRusRez-01', 'OW-01',  Date(owner2CreateMoment), Date(owner2AccOpenMoment), ISSUER, __tFace_Owner2, __tClient_OwnerAcc2);
+    DepoB       := int(ListVal(RR12,'CLIENT'));
+    DepoB_OWNER := int(ListVal(RR12,'FACE'));
+    
+    // -----------------------------------------------------------------------------
+    // Открыть счет управляющей компании "выдаваемые инвестиционные паи"
+    RR2    := _QA->InsFaceClientByAlias_t('JurRusLtdUK-03',  'VP-01',  Date(UKCreateMoment), Date(UKAccOpenMoment), ISSUER, __tFace_UK,    __tClient_GivePaiAcc);
+    EMI_UK := int(ListVal(RR2,'CLIENT'));
+    UK     := int(ListVal(RR2,'FACE'));
+
+    // -----------------------------------------------------------------------------
+    // Создать будущего Залогодержателя (контрагента по обременению) - Юридическое лицо
+    ZALOGER    := _QA->InsFaceByAlias_t('JurRusLtdUK-01', date(zalogerCreateMoment), __tFace_Zaloger);
+
+    // -----------------------------------------------------------------------------
+    // Открыть лицевой счет фонда (эмиссионный)
+    // Придется намешать немного логики на случай если в базе уже открыт лицевой счет фонда у фонда ISSUER
+    c := 0;
+    SelectSQL('Данные', [select ID from OD_CLIENTS where SUBTYPE = 7 and ISSUER = :ISS], ISSUER, ID, inc(c);EMI_ETF:=ID;exit);
+    // Если в базе еще нет лицевого счета фонда (что в общем то хочется ожидать), то импортируем его из библитэки артефактов, если же есть, то берем то что есть.
+    if (c<1) then
+        EMI_ETF   := _QA->InsClientByAlias_t('EM-01', Date(UKCreateMoment), ISSUER, UK, null{AFFILS}, __tFace_ETF , __tClient_EmiAcc);
+    end;
+
+    // -----------------------------------------------------------------------------
+    // Выдать паи с лицевого счета фонда на лицевой счет управляющей компании 
+    SE1 := _QA->IssueEtf(DateTime(issueMoment), EMI_ETF, EMI_UK, SHARE, 300.05, '');
+    
+    // -----------------------------------------------------------------------------
+    // Выдать паи первому владельцу
+    SE21 := _QA->IssueEtf(DateTime(issueMoment), EMI_UK, DepoA, SHARE, 10, '');
+
+    // -----------------------------------------------------------------------------
+    // Выдать паи второму владельцу
+    SE22 := _QA->IssueEtf(DateTime(issueMoment), EMI_UK, DepoB, SHARE, 5, '');
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Залогом
+    SE3 := _QA->ZalogEtf(  zalogMomentA,                           //             // Дата/время обременения
+                           DepoA,                                  //             // Лицевой счет, где лежат паи на которые накладывается обременение
+                           UK,                                     //             // Агент
+                           SHARE,                                  //             // Пай
+                           RestA_Z_et,                             //             // Количество обремененняемых залогом паев
+                           date(zalogMomentA),                     //             // Дата начала залога
+                           clear('31.12.1899'),                    //             // Дата конца залога
+                           2,                                      // %D_SUBTYPE  // Тип залога (2 - залог;4 - цессия) для документа Условия залога
+                           96,                                     // %C_STATE    // Условия договора залога (для документа Условия залога)
+                           DepoA_OWNER,                            // %DEPONENT   // Депонент (владелец счета на который накладываетя обременение)
+                           ZALOGER,                                // %CONTRAGENT // Контрагент по обременению - залогодержатель (обычно не указывается)
+                           GROUND_DOC_ZALOG,                       // %GROUND_DOC // Наименование первичного документа 
+                           ''                                      // %COMMENT    // 
+    );    
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Блокировкой
+    SE4 := _QA->BlockEtf(   freezeMomentA1,                         // Дата/время обременения
+                            DepoA,                                  // Лицевой счет, на который накладывается обременение
+                            REG,                                    // Агент
+                            SHARE,                                  // Пай
+                            RestA_BL1_et,                           // Количество блокируемых паев
+                            date(freezeMomentA1),                   // Дата начала блокировки
+                            clear('31.12.1899'),                    // Дата конца блокировки
+                            3,                                      // Тип блокировки (1 - Блокировка; 3 - Арест) для документа Условие блокировки
+                            0,                                      // Причина блокировки (Причина не указана)
+                            DepoA_OWNER,                            // Депонент 
+                            REG,                                    // Контрагент 
+                            GROUND_DOC_BLOCK_A1,                    // Наименование первичного документа 
+                            COMMENT_DOC_BLOCK_A1   
+    );
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Блокировкой
+    SE5 := _QA->BlockEtf(   freezeMomentA2,                         // Дата/время обременения
+                            DepoA,                                  // Лицевой счет, на который накладывается обременение
+                            REG,                                    // Агент
+                            SHARE,                                  // Пай
+                            RestA_BL2_et,                           // Количество блокируемых паев
+                            date(freezeMomentA2),                   // Дата начала блокировки
+                            clear('31.12.1899'),                    // Дата конца блокировки
+                            1,                                      // Тип блокировки (1 - Блокировка;3-Арест) для документа Условие блокировки
+                            2,                                      // Причина блокировки ( Блокировка на основании федерального закона или иного законного основания)
+                            DepoA_OWNER,                            // Депонент 
+                            REG,                                    // Контрагент 
+                            GROUND_DOC_BLOCK_A2,                    // Наименование первичного документа 
+                            COMMENT_DOC_BLOCK_A2   
+    );
+
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи второго владельца Блокировкой
+    SE6 := _QA->BlockEtf(   freezeMomentB,                          // Дата/время обременения
+                            DepoB,                                  // Лицевой счет, на который накладывается обременение
+                            REG,                                    // Агент
+                            SHARE,                                  // Пай
+                            RestB_BL_et,                            // Количество блокируемых паев
+                            date(freezeMomentB),                    // Дата начала блокировки
+                            clear('31.12.1899'),                    // Дата конца блокировки
+                            3,                                      // Тип блокировки (1 - Блокировка) для документа Условие блокировки
+                            0,                                      // Причина блокировки (Причина не указана)
+                            DepoB_OWNER,                            // Депонент 
+                            REG,                                    // Контрагент 
+                            GROUND_DOC_BLOCK_A3,                    // Наименование первичного документа 
+                            COMMENT_DOC_BLOCK_A3   
+    );
+
+    ListAdd(Obr_List_A_et, 'D_E_ZALOGS_ZDL;'+str(RestA_Z_et)+';'+iif(~isBlank(ZALOGER),str(ZALOGER),'')+';;;'+GROUND_DOC_ZALOG+';;;');
+    ListAdd(Obr_List_A_et, 'BENEF_ZDL;'+str(RestA_Z_et)+';'+iif(~isBlank(ZALOGER),str(ZALOGER),'')+';;;'+GROUND_DOC_ZALOG+';;;');
+    ListAdd(Obr_List_A_et, 'D_E_BLOCKS;'+str(RestA_BL1_et)+';'+iif(~isBlank(REG),str(REG),'')+';;;'+GROUND_DOC_BLOCK_A1+';;3;0');
+    
+except
+    //raise('QA-System: В тесте '+QA_CODE + ' не получилось создать окружение');
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение')
+end;
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария
+try
+    // Вызов тестируемой функции
+    RestA := _F_REESTR->Get_Restricted_reestr( DepoA,         // %ACC_ID : int, 
+                                               SHARE,         // %SHARE  : int, 
+                                               getRestMoment, // : DateTime, 
+                                               0,             // %MX     : int, 
+                                               0,             // %RMX    : int, 
+                                               ZDL_A, ZDR_A, BLOCK_A, BEN_ZDR_A, BLOCK_5_A, BLOCK_CA_A, BLOCK_CL_A, ZALOG_A, BLIN_A, DogList_A, Obr_List_A);
+                                          
+// DogList=<b>1.25</b> шт. Блокировано, первичн. док.: Свидетельство о заражении COVID-19
+// ObrList=D_E_BLOCKS;1.25;0;;;Свидетельство о заражении COVID-19;
+// ZDL=0
+// ZDR=0
+// BLOCK=1.25
+// BEN_ZDR=0
+// BLOCK_5=0
+// BLOCK_CA=0
+// BLOCK_CL=0
+// ZALOG=0
+// BLIN=0    
+ 
+except
+      //raise('QA-System: Тест '+QA_CODE + ' закончился падением');
+      ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением')
+end;
+
+message('DogList=' + DogList_A + #13 + #10+
+        'ObrList=' + Obr_List_A + #13 + #10+
+        'ZDL=' + str(ZDL_A)+ #13 + #10+
+        'ZDR=' + str(ZDR_A)+ #13 + #10+
+        'BLOCK=' + str(BLOCK_A)+ #13 + #10+
+        'BEN_ZDR=' + str(BEN_ZDR_A)+ #13 + #10+
+        'BLOCK_5=' + str(BLOCK_5_A)+ #13 + #10+
+        'BLOCK_CA=' + str(BLOCK_CA_A)+ #13 + #10+
+        'BLOCK_CL=' + str(BLOCK_CL_A)+ #13 + #10+
+        'ZALOG=' + str(ZALOG_A)+ #13 + #10+
+        'BLIN=' + str(BLIN_A)
+        );
+
+if (BLOCK_A = RestA_BL1_et) then
+    ListAdd(LOGK, '   _F_DEPO.Get_Restricted_adv.BLOCK  = RestA_BL1_et')
+else
+    ListAdd(LOGK, ' * _F_DEPO.Get_Restricted_adv.BLOCK  != RestA_BL1_et {' + str(BLOCK_A)+ ' | ' + str(RestA_BL1_et) + ' }');
+    inc(err_c);
+end;
+
+if (ZALOG_A = RestA_Z_et) then
+    ListAdd(LOGK, '   _F_DEPO.Get_Restricted_adv.ZALOG  = RestA_Z_et')
+else
+    ListAdd(LOGK, ' * _F_DEPO.Get_Restricted_adv.ZALOG  != RestA_Z_et {' + str(ZALOG_A)+ ' | ' + str(RestA_Z_et) + ' }');
+    inc(err_c);
+end;
+
+if (LowerCase(Obr_List_A) = LowerCase(Obr_List_A_et)) then
+    ListAdd(LOGK, '   Obr_List_A  = Obr_List_A_et')
+else
+    ListAdd(LOGK, ' * Obr_List_A  != Obr_List_A_et {' + str(Obr_List_A)+ ' | ' + str(Obr_List_A_et) + ' }');
+    inc(err_c);
+end;
+
+
+//if (REST = REST_et) then
+//    ListAdd(LOGK, '   REST  = REST_BL_et')
+//else
+//    ListAdd(LOGK, ' * REST  != REST_BL_et {' + str(REST)+ ' | ' + str(REST_et) + ' }');
+//    inc(err_c);
+//end;
+
+//if (BLOCK = REST_BL_et) then
+//    ListAdd(LOGK, '   _F_DEPO.Get_Restricted_adv.BLOCK  = REST_BL_et')
+//else
+//    ListAdd(LOGK, ' * _F_DEPO.Get_Restricted_adv.BLOCK  != REST_BL_et {' + str(BLOCK)+ ' | ' + str(REST_BL_et) + ' }');
+//    inc(err_c);
+//end;
+//
+//if (ZALOG = REST_Z_et) then
+//    ListAdd(LOGK, '   _F_DEPO.Get_Restricted_adv.ZALOG  = REST_Z_et')
+//else
+//    ListAdd(LOGK, ' * _F_DEPO.Get_Restricted_adv.ZALOG  != REST_Z_et {' + str(ZALOG)+ ' | ' + str(REST_Z_et) + ' }');
+//    inc(err_c);
+//end;
+//
+//if (LowerCase(Obr_List) = LowerCase(Obr_List_et)) then
+//    ListAdd(LOGK, '   Obr_List  = Obr_List_et')
+//else
+//    ListAdd(LOGK, ' * Obr_List  != Obr_List_et {' + str(Obr_List)+ ' | ' + str(Obr_List_et) + ' }');
+//    inc(err_c);
+//end;
+
+
+// --------------------------------------------------------------------------------
+// Post-condition : Удаляем окружение
+{
+try 
+    _QA->DelSideEffectDocuments(SE1, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+try 
+    _QA->DelSideEffectDocuments(SE21, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+try 
+    _QA->DelSideEffectDocuments(SE3, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+try 
+    _QA->DelSideEffectDocuments(SE4, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+try 
+    _QA->DelSideEffectDocuments(SE5, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+try 
+    _QA->DelSideEffectDocuments(SE6, ErrList);
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+end;
+
+
+}
+//ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], SELF_ID );
+//ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], SELF_ID );
+
+
+// Оформляем результат
+try
+    TableClear(%tt);
+    %tt.@APPEND;
+    %tt._scenario := QA_CODE;
+    %tt._result   := (err_c>0);
+    %tt._log      := logK;
+    %tt.@POST;
+except
+    raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+end;
+%tt._result;

@@ -1,0 +1,89 @@
+// ZalogEtf(  %D_DATE     : DateTime, // Дата/время обременения залогом
+//                 %DEPO       : Int,      // Лицевой счет, на который накладывается обременение
+//                 %AGENT      : Int,      // Агент
+//                 %SHARE      : Int,      // Пай
+//                 %AMOUNT     : Float,    // Количество обременяемых паев
+//                 %B_DATE     : Date,     // Дата начала блокировки
+//                 %E_DATE     : Date,     // Дата конца блокировки
+//                 %D_SUBTYPE  : Int,      // Тип блокировки (Арест, Блокировка, Блокировка по КД) - для документа "Условие блокировки"
+//                 %C_STATE    : Int,      // Причина блокировки
+//                 %DEPONENT   : Int;      // Депонент (для документа "Условие блокировки" )
+//                 %CONTRAGENT : Int,      // Контрагент (обычно не указывается)
+//                 %GROUND_DOC : Str,      // Наименование первичного документа 
+//                 %COMMENT    : Str   
+//):List
+// -----------------------------------------------------------------------------
+// Наложить обременение типа "Залог" на паи
+// EKS 04.2020
+//
+
+var __tZalogCond_ZDoc := Table(NUM str, D_DATE datetime, C_STATE int, DEPONENT int, DEPO_ACC str, DOC int, D_TYPE int, SHARE int, NUMBER str, CONTRAGENT int, AMOUNT float, 
+                               D_SUBTYPE int, B_DATE date, E_DATE date);
+var WHOS, direction, doc_state, DD_NUM, DD_DATE, DOC_ID, SYS_NAME, ZDoc, i, NUM, D_CAT, ErrList, SideEffect:=List();
+WHOS      := _Sys_Setings_F.OD_SETS._WHOS;
+direction := 0;
+doc_state := 1;                                        // Начало обработки (зарегистрирован)
+ZDoc      := clear(0);
+DD_NUM    := 'тестовый б/н';
+DD_DATE   := date(%D_DATE);
+DOC_ID    := Gen_ID('Данные','OD_DOCS_ID_GEN', 1);
+SYS_NAME  := 'OP_R_INV_OBREM';
+//ISSUER    := _F_REPORT->GetShareA(%SHARE, %D_DATE);
+D_CAT     := Extract('Данные', [select ID from OD_DOC_CATS where SYS_NAME=:SN], SYS_NAME); 
+
+i := 0;
+while i<21 do
+    NUM := _f_doc->NextDocumentNum( SYS_NAME, %D_DATE, DIRECTION );
+    try
+        ExecSQL('Данные', [insert into OD_DOCS(ID, NUM, D_CAT, D_DATE, STATE, DIRECTION, WHOS, KVIT)
+                           values(:ID, :NUM, :D_CAT, :D_DATE, :STATE, :DIRECTION, :WHOS, :KVIT)],
+                                   DOC_ID, NUM, D_CAT, %D_DATE, doc_state{STATE}, direction, WHOS, clear(0));
+         exit;
+    except
+        if pos( 'Дублирование номера', Exception.text )>0 and i<19 then
+            inc(i);
+            ErrList := ErrList + 'Продублировался номер '+ str(NUM)+'. Попытка '+str(i)+'. Время '+str(now) + #13 +#10;
+        else 
+            propagate;
+        end;
+    end;            
+end;
+TableInsert(__tZalogCond_ZDoc, List(
+                                     'NUM='        +iif(isBlank(NUM),'', NUM),
+                                     'D_DATE='     +iif(isBlank( %D_DATE),'', str(%D_DATE)),
+                                     'C_STATE='    +iif(isBlank( %C_STATE),'',str(%C_STATE)),
+                                     'DEPONENT='   +iif(isBlank( %DEPONENT),'',str(%DEPONENT)),
+                                     'DEPO_ACC='   +iif(isBlank( %DEPO),'',str(%DEPO)),
+                                     'DOC='        +iif(isBlank( DOC_ID),'',str(DOC_ID)),
+                                     'D_TYPE=1',    //Залогу подлежит указанное количество ЦБ
+                                     'SHARE='      +iif(isBlank( %SHARE),'',str(%SHARE)),
+                                     'NUMBER='     +iif(isBlank( %GROUND_DOC),'',str(%GROUND_DOC)),
+                                     'CONTRAGENT=' +iif(isBlank( %CONTRAGENT),'',str(%CONTRAGENT)),
+                                     'AMOUNT='     +iif(isBlank( %AMOUNT),'',str(%AMOUNT)),
+                                     'D_SUBTYPE='  +iif(isBlank( %D_SUBTYPE),'',str(%D_SUBTYPE)),
+                                     'B_DATE='     +iif(isBlank( %B_DATE),'',str(%B_DATE)),
+                                     'E_DATE='     +iif(isBlank( %E_DATE),'',str(%E_DATE))
+));
+
+ZDoc := _QA->InsZalogConditions(__tZalogCond_ZDoc);
+
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'CONDITION', ZDoc );           // ссылка на документ "Условия залога"
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'DD_TYPE', '2' );              // служебное
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'DD_NUM',  'б/н' );
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'DD_DATE', str(DD_DATE));      // Такое уже как у дата/время Обременения паев
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'B_TYPE', '17' );              // техническое решение
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'B_NUM', str(DD_NUM));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'B_DATE', str(DD_DATE));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'D_TYPE', 2);    // 2 - залог
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'SHARE', str(%SHARE));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'AGENT', str(%AGENT));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'DEPO', str(%DEPO));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'AMOUNT', str(%AMOUNT));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'COMMENT', str(%COMMENT));
+_F_BUX_OP->CREATE_OP_VAL( DOC_ID , 'CONTRAGENT', str(%CONTRAGENT));
+
+_F_DOC->Exec_Doc_Dir_BySysName(DOC_ID, 0, 'PROCESS',  1);         //Подтверждение
+
+ListAdd(SideEffect, 'DOC='+str(DOC_ID));
+ListAdd(SideEffect, 'DOC='+str(Zdoc));
+SideEffect;
