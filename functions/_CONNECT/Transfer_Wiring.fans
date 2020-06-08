@@ -1,0 +1,73 @@
+{Transfer_Wiring( %WIR_ID : integer; %WithUpdate :int; Done:int )}
+
+Assert( ~IsBlank(%WIR_ID ) ,'Не задан параметр %WIR_ID (проводка)');
+var PLAN_TYPE,WIR_ID,D_S,K_S;
+
+var WIRDATE,NAME,COMMENT,D_SUMMA, K_SUMMA, EQ_, D_AMOUNT, K_AMOUNT,BLANKS,
+    PLAN_ID,PLAN_ID96, DOC,DOC96,D_ACC,K_ACC, D_ACC96,K_ACC96,
+    IS_PLAN:='F', DOL:=Clear(0), O_STEP:=Clear(0), CHANGED_BY:=_SYS_SETINGS_F.OD_OP_SETS.~OPER_ID,
+    D1,D2,D3,D4,D5,D6,K1,K2,K3,K4,K5,K6, 
+    DT1,DT2,DT3,DT4,DT5,DT6,KT1,KT2,KT3,KT4,KT5,KT6, 
+    VAL,VAL96;
+
+for 'ИсходныеДанные' select 'select S.DOC,W.PLAN_ID,P.PLAN_TYPE,W.WIRDATE,W.NAME,W.COMMENT,D.BAL_ACC,K.BAL_ACC,W.D_SUMMA, W.K_SUMMA, W.EQ_, W.D_AMOUNT, W.K_AMOUNT,W.BLANKS, '+
+  'D.REG_1,D.REG_2,D.REG_3,D.REG_4,D.REG_5,D.REG_6, K.REG_1,K.REG_2,K.REG_3,K.REG_4,K.REG_5,K.REG_6,'+
+  'DB.RET_1,DB.RET_2,DB.RET_3,DB.RET_4,DB.RET_5,DB.RET_6, KB.RET_1,KB.RET_2,KB.RET_3,KB.RET_4,KB.RET_5,KB.RET_6,'+
+  'D.VALUE_ID,DB.SYS_NAME,KB.SYS_NAME '+
+  'from OD_WIRING W '+
+  'left join OD_STEPS S on S.ID=W.O_STEP ' +
+  'left join OD_ACC_PLANS P on P.ID=W.PLAN_ID '+
+  'left join OD_RESTS D on D.ID=W.D_REST '+
+  'left join OD_BALANCES DB on DB.ID=D.BAL_ACC '+
+  'left join OD_RESTS K on K.ID=W.K_REST '+
+  'left join OD_BALANCES KB on KB.ID=K.BAL_ACC '+
+  'where  W.ID=:ID '
+from %WIR_ID
+into DOC96,PLAN_ID96,PLAN_TYPE,WIRDATE,NAME,COMMENT,D_ACC96,K_ACC96,D_SUMMA, K_SUMMA, EQ_, D_AMOUNT, K_AMOUNT,BLANKS,
+     D1,D2,D3,D4,D5,D6,K1,K2,K3,K4,K5,K6,
+     DT1,DT2,DT3,DT4,DT5,DT6,KT1,KT2,KT3,KT4,KT5,KT6, 
+     VAL96 ,D_S,K_S
+do
+  PLAN_ID:=owner->Transfer_Plan(PLAN_ID96);
+  D_ACC:=Transfer_Balac(D_ACC96,PLAN_ID);
+  K_ACC:=Transfer_Balac(K_ACC96,PLAN_ID);
+  if PLAN_TYPE=1 then
+     VAL:=Transfer_Value(VAL96,%WithUpdate,Done)
+  elsif PLAN_TYPE=2 then
+     VAL:=Transfer_Share(VAL96,%WithUpdate,Done)
+  end;
+  if owner.WITH_ANALYTICS.Checked then
+    if D1<>0 then D1:=Transfer_REG(D1,DT1, %WithUpdate,Done) end;
+    if D2<>0 then D2:=Transfer_REG(D2,DT2, %WithUpdate,Done) end;
+    if D3<>0 then D3:=Transfer_REG(D3,DT3, %WithUpdate,Done) end;
+    if D4<>0 then D4:=Transfer_REG(D4,DT4, %WithUpdate,Done) end;
+    if D5<>0 then D5:=Transfer_REG(D5,DT5, %WithUpdate,Done) end;
+    if D6<>0 then D6:=Transfer_REG(D6,DT6, %WithUpdate,Done) end;
+
+    if K1<>0 then K1:=Transfer_REG(K1,KT1, %WithUpdate,Done) end;
+    if K2<>0 then K2:=Transfer_REG(K2,KT2, %WithUpdate,Done) end;
+    if K3<>0 then K3:=Transfer_REG(K3,KT3, %WithUpdate,Done) end;
+    if K4<>0 then K4:=Transfer_REG(K4,KT4, %WithUpdate,Done) end;
+    if K5<>0 then K5:=Transfer_REG(K5,KT5, %WithUpdate,Done) end;
+    if K6<>0 then K6:=Transfer_REG(K6,KT6, %WithUpdate,Done) end;
+  end;
+  if (owner.WITH_DOCS.Checked) & ~IsNull(DOC96) then
+     DOC:=Transfer_Doc(DOC96,%WithUpdate,Done);
+     O_STEP:= Extract('Данные','select ID from OD_STEPS where DOC=:D and A_DOC is NULL and ERR_CODE=0 and S_TYPE=0',doc);
+     if IsNull(O_STEP) then
+        O_STEP := Gen_ID('Данные', 'OD_STEPS_ID_GEN' , 1);
+        ExecSQL('Данные','insert into OD_STEPS (ID,DOC,A_DOC,ERR_CODE,S_TYPE,OUT_STATE,S_DATE) values(:ID,:DOC,NULL,0,0,0,GETDATE())',O_STEP,doc);
+     end;
+  end;
+  try
+    //WIR_ID:=Gen_ID('Данные', 'OD_WIRING_ID_GEN', 1);
+    ExecProc('OD_PR_INS_WIRS','Данные',
+           Clear(0),PLAN_ID,WIRDATE,NAME,COMMENT,D_SUMMA, K_SUMMA, EQ_, D_AMOUNT, K_AMOUNT,BLANKS,O_STEP,DOL,CHANGED_BY,IS_PLAN,
+           D_ACC,VAL,D1,D2,D3,D4,D5,D6,
+           K_ACC,VAL,K1,K2,K3,K4,K5,K6,WIR_ID);
+  except
+     Message('Проводка "'+name+'": Дебет('+d_s+')->Кредит('+k_s+') на сумму '+Str(VALUE_)+ ' не прошла:'+EXCEPTION.Text);
+     abort
+  end;
+end;
+Done:=1;

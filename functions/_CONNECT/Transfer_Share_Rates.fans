@@ -1,0 +1,93 @@
+//Transfer_Share_Rates( %SHARE_FROM, %SHARE_TO : integer; %WithUpdate :boolean; Replicated:int )
+var Q, RC, MARKET_LIST:=list(), i, c:=0, MARKET, wh:='', RV, RVL:=list();
+if %WithUpdate=2 then //обновляем целиком все котировки - значит надо удалить старые
+   ExecSQL('Данные', [delete from OD_VALUES_RATES where VALUE_ID=:S], %SHARE_TO)
+end;
+i:=ListCount(_connect.Transfer_Share.WithoutMarket);
+while dec(i)>=0 do
+   if IsBlank(wh)
+      then wh := ' and (f.MNEM is null or f.MNEM not in ('''+ ListGet(_connect.Transfer_Share.WithoutMarket, i) +''''
+      else wh := wh +','''+ ListGet(_connect.Transfer_Share.WithoutMarket, i) +''''
+   end
+end;
+
+RC := extract('ИсходныеДанные', [select count(*) from OD_VALUES v
+    left join OD_VALUES_RATES r on r.VALUE_ID=v.ID]+ iif( owner.OFICDATE_Edit.Date=0, [], [ and r.OFICDATE>=']+str(date(owner.OFICDATE_Edit.Date))+[']) +[
+    left join OD_FACES f on f.SELF_ID=r.MARKET and f.LAST_FLAG=1
+    where v.ID=:S and r.VALUE_ID is not null]+ iif(IsBlank(wh), '', wh+'))'), %SHARE_FROM);
+Replicated := 0;
+for 'ИсходныеДанные' select
+   [select v.NAME V_NAME, r.OFICDATE, r.CNT, r.RATE3, r.RATE, rv.SYSNAME as RATE_SNVAL, r.RATE_MIN, r.RATE_MAX, r.LEVEL_,
+           r.BID, r.AVERAGE_, r.AV_BID10, r.AV_BID, r.AV_BID_PD, r.OPEN_, r.CLOSE_,
+           r.COUNT_, r.AMOUNT_, r.SUMMA_, r.AVERAGE_10, r.PFR_PRICE, r.ESTIM, r.COMMENT_,
+           f.NAME MARKET_NAME, f.MNEM MARKET_MNEM, r.NKD, r.RATE3_VOL, r.RATE_VOL, r.AVERAGE_10_VOL, r.PFR_PRICE_VOL,
+           r.DURATION, r.CLOSEPER, r.OFFER, r.HIGH_BID, r.LOW_OFFER, r.ESTIM_E_DATE,r.E_DATE, r.YIELDATWAP, r.PUBLIC_DATE
+    from OD_VALUES v
+    left join OD_VALUES_RATES r on r.VALUE_ID=v.ID]+ iif( owner.OFICDATE_Edit.Date=0, [], [ and r.OFICDATE>=']+str(date( owner.OFICDATE_Edit.Date))+[']) +[
+    left join OD_FACES f on f.SELF_ID=r.MARKET and f.LAST_FLAG=1
+    left join OD_VALUES rv on rv.ID=r.RATE_VAL
+    where v.ID=:S and r.VALUE_ID is not null]+ iif(IsBlank(wh), '', wh+'))')
+from %SHARE_FROM
+using Q
+do
+   if (RC > 1000) then
+      if c=0 then StartProgress('Репликация котировок','Котировки '+Q._V_NAME) end;
+      if (c mod 5)=0 then DoProgress(0, c, RC) end;
+   end;
+   if not IsNull(Q._MARKET_MNEM) then
+      if ListInd(_connect.Transfer_Share.WithoutMarket, Q._MARKET_MNEM) >= 0 then continue end; //велено эту торг.систему не рассматривать
+      MARKET := ListVal(MARKET_LIST, Q._MARKET_MNEM);
+      if IsBlank(MARKET) then
+         i := SelectSQL('Данные', [select SELF_ID from OD_FACES where MNEM=:M and LAST_FLAG=1],
+                       Q._MARKET_MNEM, MARKET, dummy);
+         if i=1 then
+            ListSet(MARKET_LIST, Q._MARKET_MNEM, str(MARKET))
+         elsif i=0 then
+            Assert(Question('Не найдена торговая площадка с мнемоникой '''+Q._MARKET_MNEM+'''.'
+                           +' Можно продолжить без репликации котировок данной торговой площадки.'
+                           +' Продолжить репликацию?'),
+                   'В целевой базе не найдена торговая площадка с мнемоникой '''+Q._MARKET_MNEM+'''.');
+            ListAdd(_connect.Transfer_Share.WithoutMarket, Q._MARKET_MNEM)
+         else
+            Assert(Question('Неоднозначность: найдено две торговые площадки с мнемоникой '''+Q._MARKET_MNEM+'''.'
+                           +' Можно продолжить без репликации котировок данной торговой площадки.'
+                           +' Продолжить репликацию?'),
+                   'В целевой базе неоднозначность: найдено две торговые площадки с мнемоникой '''+Q._MARKET_MNEM+'''.');
+            ListAdd(_connect.Transfer_Share.WithoutMarket, Q._MARKET_MNEM)
+         end
+      end;
+      MARKET := int(MARKET);
+   else
+      MARKET := 0
+   end;
+   if not IsBlank(MARKET) then
+      i := Extract('Данные', [select count(*) from OD_VALUES_RATES where VALUE_ID=:S and OFICDATE=:D and MARKET=:M], %SHARE_TO, Q._OFICDATE, MARKET);
+      if (i>0) and (%WithUpdate>0) then
+         ExecSQL('Данные', [delete from OD_VALUES_RATES where VALUE_ID=:S and OFICDATE=:D and MARKET=:M], %SHARE_TO, Q._OFICDATE, MARKET);
+      end;
+      if (i=0) or (%WithUpdate>0) then
+         RV := Int(ListVal(RVL, Q._RATE_SNVAL));
+         if IsBlank(RV) then
+            RV := Extract('Данные', [select ID from OD_VALUES where SYSNAME=:SN and V_TYPE=1], Q._RATE_SNVAL);
+            Assert(not IsNull(RV), 'В целевой базе не найдена валюта с кодом '+ Q._RATE_SNVAL +', она используется в котировках для ценной бумаги '+ Q._V_NAME);
+            ListSet(RVL, Q._RATE_SNVAL, str(RV))
+         end;
+         ExecSQL('Данные',
+            [insert into OD_VALUES_RATES
+             (VALUE_ID, OFICDATE, CNT, RATE3, RATE, RATE_VAL, RATE_MIN, RATE_MAX, LEVEL_,
+              BID, AVERAGE_, AV_BID10, AV_BID, AV_BID_PD, OPEN_, CLOSE_,
+              COUNT_, AMOUNT_, SUMMA_, AVERAGE_10, PFR_PRICE, ESTIM, COMMENT_,
+              MARKET, NKD, RATE3_VOL, RATE_VOL, AVERAGE_10_VOL, PFR_PRICE_VOL,
+              DURATION, CLOSEPER, OFFER, HIGH_BID, LOW_OFFER, ESTIM_E_DATE, E_DATE, YIELDATWAP, PUBLIC_DATE) values
+             (:A,:B,:C,:D,:E,:F,:G,:H,:I,:J,:K,:L,:M,:N,:O,:P,:Q,:R,:S,:T,:U,:V,:W,:X,:Y,:Z,:A0,:B0,:C0,:D0,:E0,:F0, :HIGH_BID, :LOW_OFFER, :ESTIM_E_DATE, :E_DATE, :YIELDATWAP, :PUBLIC_DATE)],
+              %SHARE_TO, Q._OFICDATE, Q._CNT, Q._RATE3, Q._RATE, RV, Q._RATE_MIN, Q._RATE_MAX, Q._LEVEL_,
+              Q._BID, Q._AVERAGE_, Q._AV_BID10, Q._AV_BID, Q._AV_BID_PD, Q._OPEN_, Q._CLOSE_,
+              Q._COUNT_, Q._AMOUNT_, Q._SUMMA_, Q._AVERAGE_10, Q._PFR_PRICE, Q._ESTIM, Q._COMMENT_,
+              MARKET, Q._NKD, Q._RATE3_VOL, Q._RATE_VOL, Q._AVERAGE_10_VOL, Q._PFR_PRICE_VOL,
+              Q._DURATION, Q._CLOSEPER, Q._OFFER, Q._HIGH_BID, Q._LOW_OFFER, Q._ESTIM_E_DATE,Q._E_DATE, Q._YIELDATWAP, Q._PUBLIC_DATE);
+              Inc(Replicated);
+      end
+   end;
+   inc(c)
+end;
+Replicated

@@ -1,0 +1,59 @@
+//Репликация котировок облигаций
+Assert(IsOpen('_CONNECT'), 'Форма доступа к данным не открыта');
+if not owner->IsVersionCompatible_con then
+   Assert(Question('Попытка реплицировать котировки ценных бумаг из базы данных другой версии. '+
+         'Желательно установить обновления, чтобы версии были одинаковыми.'+#13+#10+
+         'Или всё же хотите попробовать реплицировать на свой страх и риск, без гарантий?'),
+      'Попытка реплицировать котировки ценных бумаг из базы данных другой версии. '+
+      'Установите обновления, чтобы версии были одинаковыми.')
+end;
+var  done:=0, Replicated:=0, new_Share, s:='',  LEVEL_:=LEVEL_Combo.ItemIndex, SYSNAME;
+
+_connect.Transfer_Share.WithoutMarket := list();
+if _CONNECT.OShareLazy.Value='' then
+   StartProgress( 'Репликация котировок', 'Ценные бумаги' );
+   var ID, cur, all := Extract( 'ИсходныеДанные', [select count(*) from OD_SHARES s, OD_VALUES v where S.ID=S.SELF_ID and s.CLASS=2 and s.ID=v.ID and v.IS_IN<>0 and s.DEATHDATE>='01.01.2006']);
+   DoProgress( 0, cur:=0, all );
+   s := iif(LEVEL_Combo.ItemIndex>0, ' (уровень '+LEVEL_Combo.Text+')', '');
+   for 'ИсходныеДанные' select [select s.ID,v.SYSNAME from OD_SHARES s, OD_VALUES v where S.ID=S.SELF_ID and s.CLASS=2 and s.ID=v.ID and v.IS_IN<>0 and s.DEATHDATE>='01.01.2006']
+      into ID,SYSNAME
+   do
+      if LEVEL_Combo.ItemIndex > 0 then //только один уровень ЦБ
+         SelectSQL('ИсходныеДанные', 'select LEVEL_ from OD_VALUES_RATES where VALUE_ID=:ID order by OFICDATE desc', ID, LEVEL_, exit);
+      end;
+      if LEVEL_=LEVEL_Combo.ItemIndex then
+         try
+            with 'Данные' do
+               new_Share := Extract('Данные','select v.ID from OD_VALUES v where v.SYSNAME=:SYSNAME and V_TYPE=2',SYSNAME);
+               Assert(~IsNull(new_Share),'Для бумаги с кодом: '+SYSNAME+' не найден аналог в базе "Данные"') ;
+               _connect->Transfer_Share_Rates( id, new_Share, _CONNECT.RepTypeGroup.ItemIndex, Done );
+            end;
+            if done > 0 then
+               Replicated := Replicated+ Done;
+            end
+         except
+            if not Question(EXCEPTION.Text+' Продолжить репликацию котировок?') then
+               exit
+               //Replicated:=0; News:=0;
+               //propagate;
+            end;
+         end;
+      end;
+      DoProgress( 0, inc( cur ), all )
+   end;
+   DoProgress( 0, all, all );
+else
+   with 'Данные' do
+      SYSNAME:=Extract( 'ИсходныеДанные', 'select v.SYSNAME from OD_VALUES v where v.ID=:SHARE', owner.OShareLazy.Value);
+      new_Share :=Extract('Данные','select v.ID from OD_VALUES v where v.SYSNAME=:SYSNAME and V_TYPE=2',SYSNAME);
+      _connect->Transfer_Share_Rates( _CONNECT.OShareLazy.Value, new_Share, _CONNECT.RepTypeGroup.ItemIndex, Done );
+   end;
+   if done > 0 then
+      Replicated := Replicated+ Done;
+   end
+end;
+if Replicated > 0 then
+   Message('Всего изменений'+s+': '+Str( Replicated ));
+else
+   Message('Изменений не было')
+end

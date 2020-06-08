@@ -1,0 +1,48 @@
+{Transfer_Doc( %DOC_ID : integer; %WithUpdate :int; Done:int )}
+
+Assert( ~IsBlank(%DOC_ID ) ,'Не задан параметр %DOC_ID (документ)');
+var PLAN_TYPE,WIR_ID,D_S,K_S;
+
+var ID,NUM,R_DATE,D_CAT,D_DATE,PROC_DATE,DIRECTION,WHOS,PARAM,KVIT,U_FLAG,A_FLAG,STATE,ERR_CODE,ADD_TABLE,
+    NEW_WHOS:=_SYS_SETINGS_F.OD_SETS._WHOS,NEW_KVIT:=Clear(0),NEW_D_CAT,IsNotFound;
+
+for 'ИсходныеДанные' select 'select D.NUM,D.R_DATE,D.D_CAT,D.D_DATE,D.PROC_DATE,D.DIRECTION,D.WHOS,D.PARAM,D.KVIT,D.U_FLAG,D.A_FLAG,D.STATE,D.ERR_CODE,C.ADD_TABLE '+
+  'from OD_DOCS D left join OD_DOC_CATS C on c.ID=D.D_CAT '+
+  'where  D.ID=:ID '
+from %DOC_ID
+into NUM,R_DATE,D_CAT,D_DATE,PROC_DATE,DIRECTION,WHOS,PARAM,KVIT,U_FLAG,A_FLAG,STATE,ERR_CODE,ADD_TABLE
+do
+//  owner->Transfer_Face(WHOS,%WithUpdate,Done,NEW_WHOS);
+  if ~IsNull(KVIT) then NEW_KVIT:=owner->Transfer_Doc(KVIT,%WithUpdate,Done) end;
+  NEW_D_CAT:=owner->Transfer_Cat(D_CAT);
+  Done := 0;
+  if IsNull(NUM) & IsNull(D_DATE) then
+      IsNotFound:=(ExtractSQL( 'Данные', 'select ID from OD_DOCS where WHOS=:WHOS and D_CAT=:D_CAT  ',
+         NEW_WHOS,NEW_D_CAT, ID) = 0);
+  elsif IsNull(NUM) then
+      IsNotFound:=(ExtractSQL( 'Данные', 'select ID from OD_DOCS where WHOS=:WHOS and D_CAT=:D_CAT and D_DATE=:D_DATE ',
+         NEW_WHOS,NEW_D_CAT,D_DATE,  ID) = 0);
+  elsif IsNull(D_DATE) then
+      IsNotFound:=(ExtractSQL( 'Данные', 'select ID from OD_DOCS where WHOS=:WHOS and D_CAT=:D_CAT and NUM=:NUM ',
+         NEW_WHOS,NEW_D_CAT,NUM,  ID) = 0);
+  else
+      IsNotFound:=(ExtractSQL( 'Данные', 'select ID from OD_DOCS where WHOS=:WHOS and D_CAT=:D_CAT and NUM=:NUM and D_DATE=:D_DATE',
+         NEW_WHOS,NEW_D_CAT,NUM, D_DATE, ID) = 0);
+  end;
+  if (%WithUpdate<>2) and IsNotFound then //проверка наличия цепочки
+    id := Gen_ID( 'Данные', 'OD_DOCS_ID_GEN', 1 );
+    ExecSQL( 'Данные', 'insert into OD_DOCS (ID,NUM,R_DATE,D_CAT,D_DATE,PROC_DATE,DIRECTION,WHOS,PARAM,KVIT,U_FLAG,A_FLAG,STATE,ERR_CODE) values '+
+    ' (:ID,:NUM,:R_DATE,:D_CAT,:D_DATE,:PROC_DATE,:DIRECTION,:WHOS,:PARAM,:KVIT,:U_FLAG,:A_FLAG,:STATE,:ERR_CODE) ',
+           ID,NUM,R_DATE,NEW_D_CAT,D_DATE,PROC_DATE,DIRECTION,NEW_WHOS,PARAM,NEW_KVIT,U_FLAG,A_FLAG,STATE,ERR_CODE);
+    Transfer_DocTail(ID,%DOC_ID,ADD_TABLE,%WithUpdate,Done);
+     Done := 1; //был insert
+  elsif (%WithUpdate>0) and ~IsNotFound then
+      if (%WithUpdate=2)  then
+         ExecSQL( 'Данные', 'update OD_DOCS set NUM=:NUM,R_DATE=:R_DATE,D_CAT=:D_CAT,D_DATE=:D_DATE,PROC_DATE=:PROC_DATE,DIRECTION=:DIRECTION,'+
+            'PARAM=:PARAM,KVIT=:KVIT,U_FLAG=:U_FLAG,A_FLAG=:A_FLAG,STATE=:STATE,ERR_CODE=:ERR_CODE  where ID=:ID',
+           NUM,R_DATE,NEW_D_CAT,D_DATE,PROC_DATE,DIRECTION,PARAM,NEW_KVIT,U_FLAG,A_FLAG,STATE,ERR_CODE, ID);
+          Done := 2; //был update
+      end
+  end;
+end;
+ID

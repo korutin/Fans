@@ -1,0 +1,51 @@
+{Transfer_Account( %Account_id : integer; %WithUpdate :int; Done:int )}
+
+Assert( ~IsBlank(%Account_id ) ,'Не задан параметр %Account_id  (счет)');
+var A_TYPE96, FACE96, NAME96, S_TYPE96, BANK96, ACNT96, O_DATE96, O_NUM96, C_DATE96, DEPARTMENT96, LINK96, CORR96, DEPART_CITY96, IS_MAIN96, PLACE96, IS_POP96, MARKET96,
+    DoneF, IsNotFound,
+    ID, S_TYPE, NAME, ACNT, FACE, BANK, LINK, PLACE, MARKET, ACC_VAL, ACC_VAL_SYSNAME, ACC_VAL_TYPE;
+
+ExtractSQL( 'ИсходныеДанные',
+   'select a.A_TYPE, a.FACE, a.NAME, a.S_TYPE, a.BANK, a.ACNT, a.O_DATE, a.O_NUM, a.C_DATE, a.DEPARTMENT, a.LINK, a.ACNT_CORR, a.DEPART_CITY, a.IS_MAIN, a.PLACE, a.IS_POP, a.MARKET, av.SYSNAME, av.V_TYPE '+
+   'from OD_FACE_ACCS a '+
+   'left join OD_VALUES av on av.ID=a.ACC_VAL '+
+   'where a.ID=:ID', %Account_id,
+   A_TYPE96, FACE96, NAME96, S_TYPE96, BANK96, ACNT96, O_DATE96, O_NUM96, C_DATE96, DEPARTMENT96, LINK96, CORR96, DEPART_CITY96, IS_MAIN96, PLACE96, IS_POP96, MARKET96, ACC_VAL_SYSNAME, ACC_VAL_TYPE);
+
+owner->Transfer_Face(BANK96,1,DoneF,BANK);
+owner->Transfer_Face(FACE96,1,DoneF,FACE);
+if not IsBlank(MARKET96) then owner->Transfer_Face(MARKET96,1,DoneF,MARKET) else MARKET:=clear(0) end;
+if not IsBlank(LINK96  ) then LINK:=owner->Transfer_Account(LINK96,0,DoneF) else LINK  :=clear(0) end;
+if not IsBlank(PLACE96 ) then PLACE:=owner->Transfer_Chain(PLACE96,0,DoneF) else PLACE :=clear(0) end;
+if not IsBlank(ACC_VAL_SYSNAME) then
+   ACC_VAL := extract('Данные', 'select ID from OD_VALUES where SYSNAME=:SN and V_TYPE=:VT', ACC_VAL_SYSNAME, ACC_VAL_TYPE);
+   assert(not IsBlank(ACC_VAL), 'В целевой базе данных отсутствует валюта ('+ACC_VAL_SYSNAME+') счёта ('+ACNT96+')');
+else
+   ACC_VAL := clear(0)
+end;
+//if IsBlank(CORR96) then CORR96:='б/н' end;
+Done := 0;
+
+IsNotFound:=(ExtractSQL( 'Данные', 'select ID, S_TYPE, NAME, ACNT from OD_FACE_ACCS where BANK=:BANK and FACE=:FACE and ACNT=:ACNT and A_TYPE=:A_TYPE ',
+             BANK, FACE, ACNT96, A_TYPE96, ID, S_TYPE, NAME, ACNT) = 0);
+
+if (%WithUpdate<>2) and IsNotFound then //проверка наличия счета
+//такого счета еще нет; будем заводить
+  id := Gen_ID( 'Данные', 'OD_FACE_ACCS_id_gen', 1 );
+  ExecSQL( 'Данные',
+     'insert into OD_FACE_ACCS '+
+     '(ID, A_TYPE, S_TYPE, NAME, BANK, FACE, ACNT, ACNT_CORR, O_DATE, O_NUM, C_DATE, DEPARTMENT, LINK, DEPART_CITY, IS_MAIN, PLACE, IS_POP, MARKET, ACC_VAL) values '+
+     '(:A,:B,:C,:D,:E,:F,:G,:H,:I,:J,:K,:L,:M,:N,:O,:P,:Q,:R,:S) ',
+       ID, A_TYPE96, S_TYPE96, NAME96, BANK, FACE, ACNT96, CORR96, O_DATE96, O_NUM96, C_DATE96, DEPARTMENT96, LINK, DEPART_CITY96, IS_MAIN96, PLACE, IS_POP96, MARKET, ACC_VAL);
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and ~IsNotFound then
+   if NAME96<>NAME then
+      ExecSQL( 'Данные',
+         'update OD_FACE_ACCS set '+
+         'NAME=:A, O_DATE=:B, O_NUM=:C, C_DATE=:D, DEPARTMENT=:E, LINK=:F, ACNT_CORR=:G, S_TYPE=:H, DEPART_CITY=:I, IS_MAIN=:J, PLACE=:K, IS_POP=:L, MARKET=:M, ACC_VAL=:N where ID=:ID',
+         NAME96, O_DATE96, O_NUM96, C_DATE96, DEPARTMENT96, LINK, CORR96, S_TYPE96, DEPART_CITY96, IS_MAIN96, PLACE, IS_POP96, MARKET, ACC_VAL,
+         ID);
+      Done := 2; //был update
+   end;
+end;
+ID

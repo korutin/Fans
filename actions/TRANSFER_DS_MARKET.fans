@@ -1,0 +1,239 @@
+//TRANSFER_DS_MARKET - Перевод ДС с основного/торгового счета на торговый/основной
+var INVESTOR, CONTRACT, SUM, VALUE_ID, NAME,
+    Fl:=false, i:=0,
+    DOC, DOL,
+    MEDIATOR, ACC1, ACC2, TransferDate,
+    res, Fn,
+F:=[object Form1: TForm1
+  Left = 315
+  Top = 504
+  BorderStyle = bsDialog
+  Caption = 'Параметры'
+  ClientHeight = 165
+  ClientWidth = 428
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'MS Sans Serif'
+  Font.Style = []
+  OldCreateOrder = False
+  PixelsPerInch = 96
+  TextHeight = 13
+  object Label1: TLabel
+    Left = 8
+    Top = 8
+    Width = 26
+    Height = 13
+    Caption = 'Дата'
+  end
+  object Label2: TLabel
+    Left = 8
+    Top = 32
+    Width = 56
+    Height = 13
+    Caption = 'Посредник'
+    Visible = ]+iif(APPLICATION in List('SPECTRE','STANDARD','TRUST'), 'true', 'false')+[
+  end
+  object Label3: TLabel
+    Left = 8
+    Top = 65
+    Width = 171
+    Height = 13
+    Caption = 'Основной/торговый счет (откуда)'
+  end
+  object Label4: TLabel
+    Left = 8
+    Top = 100
+    Width = 160
+    Height = 13
+    Caption = 'Торговый/основной счет (куда)'
+  end
+  object TransferDate: TFsDateEdit
+    Left = 40
+    Top = 4
+    Width = 97
+    Height = 21
+    NumGlyphs = 2
+    TabOrder = 0
+  end
+  object TransferTime: TDateTimePicker
+    Left = 140
+    Top = 4
+    Width = 77
+    Height = 21
+    Date = 39300.460002974530000000
+    Time = 39300.460002974530000000
+    Kind = dtkTime
+    TabOrder = 1
+  end
+  object lbMEDIATOR: TLazyBox
+    Left = 8
+    Top = 48
+    Width = 417
+    Height = 14
+    KeyMayBeNull = False
+    LookUpQuery = qMEDIATOR
+    LookUpField = 'SELF_ID'
+    Descriptor.Strings = (
+      'NUM=Код;15'
+      'NAME=Наименование;30')
+    BorderStyle = bsNone
+    TabOrder = 2
+    Visible = ]+iif(APPLICATION in List('SPECTRE','STANDARD','TRUST'), 'true', 'false')+[
+  end
+  object lbACC1: TLazyBox
+    Left = 8
+    Top = 80
+    Width = 417
+    Height = 14
+    KeyMayBeNull = False
+    LookUpQuery = qACC1
+    LookUpField = 'ID'
+    Descriptor.Strings = (
+      'ACNT=Номер;20'
+      'NAME=Наименование;30'
+      'BANK=Хранилище;30'
+      'OWNER=Владелец;30')
+    BorderStyle = bsNone
+    TabOrder = 3
+  end
+  object lbACC2: TLazyBox
+    Left = 8
+    Top = 116
+    Width = 417
+    Height = 14
+    KeyMayBeNull = False
+    LookUpQuery = qACC2
+    LookUpField = 'ID'
+    Descriptor.Strings = (
+      'ACNT=Номер;20'
+      'NAME=Наименование;30'
+      'BANK=Хранилище;30'
+      'OWNER=Владелец;30')
+    BorderStyle = bsNone
+    TabOrder = 4
+  end
+  object btnOK: TBitBtn
+    Left = 8
+    Top = 136
+    Width = 75
+    Height = 25
+    TabOrder = 5
+    Kind = bkOK
+  end
+  object btnCancel: TBitBtn
+    Left = 88
+    Top = 136
+    Width = 75
+    Height = 25
+    TabOrder = 6
+    Kind = bkCancel
+  end
+  object qMEDIATOR: TFsQuery
+    DatabaseName = 'Данные'
+    SQL.Strings = (
+      'select F.SELF_ID, F.MNEM as NUM, F.NAME  '
+      'from OD_FACES F '
+      '   left join OD_P_FACES PF on F.SELF_ID=PF.FACE'
+      'where F.LAST_FLAG=1 and PF.DIAL_MODE=1'
+      'order by F.NAME')
+    Macros = <>
+    Left = 232
+    Top = 16
+  end
+  object qACC1: TFsQuery
+    DatabaseName = 'Данные'
+    SQL.Strings = (
+      'select ID, ACNT, NAME, BANK, OWNER from OD_FACE_ACCS_VIEW'
+      'where A=1'
+      'order BY ACNT,S')
+    Macros = <>
+    Left = 288
+    Top = 32
+  end
+  object qACC2: TFsQuery
+    DatabaseName = 'Данные'
+    SQL.Strings = (
+      'select ID, ACNT, NAME, BANK, OWNER from OD_FACE_ACCS_VIEW'
+      'where A=1'
+      'order BY ACNT,S')
+    Macros = <>
+    Left = 296
+    Top = 80
+  end
+end
+];
+
+Fn := _Metal_F->MakeForm(F);
+try
+   Fn.TransferDate.Text:=Str(Date(now));
+   Fn.TransferTime.Time:=Time(now);
+   res:=RegRead('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'ok', 0 );
+   if res=1 then
+      try Fn.lbMEDIATOR.Value:=RegRead('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'MEDIATOR', ''); except 0 end;
+      try Fn.lbACC1.Value:=RegRead('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'ACC1', ''); except 0 end;
+      try Fn.lbACC2.Value:=RegRead('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'ACC2', ''); except 0 end;
+   end;
+   res:=Fn.@ShowModal;
+   if res=1 then
+      RegWrite('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'MEDIATOR', Fn.lbMEDIATOR.Value  );
+      RegWrite('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'ACC1', Fn.lbACC1.Value  );
+      RegWrite('T_DOC_LIST\CREATE\transfer_ds_market_dlg_', 'ACC2', Fn.lbACC2.Value  );
+      TransferDate:=DateTime(Fn.TransferDate.Text+' '+Str(Time(Fn.TransferTime.Time)));
+      MEDIATOR:=itry( int(Fn.lbMEDIATOR.Value), Clear(0) );
+      ACC1:=itry( int(Fn.lbACC1.Value), Clear(0) );
+      ACC2:=itry( int(Fn.lbACC2.Value), Clear(0) );
+   else
+      Fn.@Free;
+      return(0);
+   end;
+except
+   Fn.@Free;
+   Propagate;
+end;
+Fn.@Free;
+if ACC1=ACC2 then raise('Ошибка! Счета "откуда", "куда" совпадают.'); end;
+
+for 'Данные' select [select  R.REG_1, R.REG_3, V.ID, F.NAME, f_Round(-sum(T.TYPE_*T.EQ_), V.MFU)
+        from OD_OPERATORS O
+           left join OD_ACC_PLANS AP on AP.WHOS=O.U_FACE and AP.SYS_NAME='MONEY'
+           left join OD_BALANCES B on B.ACC_PLAN=AP.ID and B.SYS_NAME=']+iif(IsBlank(MEDIATOR), 'Р/С', 'Р/С-С')+['
+           left join OD_RESTS R on R.BAL_ACC=B.ID and R.REG_2=:ACC ]+iif(IsBlank(MEDIATOR), '', ' and R.REG_4='+Str(MEDIATOR))+[
+           left join OD_FACES F on F.SELF_ID=R.REG_1 and F.LAST_FLAG=1
+           left join OD_DOCS D on D.ID=R.REG_3 and D.D_DATE<=:D_DATE
+           left join D_B_CONTRACTS C on C.DOC=D.ID and C.E_DATE>:D_DATE
+           left join OD_VALUES V on V.ID=R.VALUE_ID
+           left join OD_TURNS T on T.REST=R.ID and T.WIRDATE>=:B_DATE and T.WIRDATE<='01.01.9999'
+           /*left join OD_WIRING W on W.ID=T.WIRING*/
+        where O.USER_ID=USER and T.IS_PLAN='F' and ]+iif(APPLICATION in List('SPECTRE','TRUST'), '((R.REG_3=0) or C.DOC is not null)', 'C.DOC is not null')+[
+        group by R.REG_1, R.REG_3, V.ID, V.MFU, F.NAME
+        having f_Round(-sum(T.TYPE_*T.EQ_), V.MFU)>0]
+from ACC1, TransferDate, TransferDate, TransferDate
+into INVESTOR, CONTRACT, VALUE_ID, NAME, SUM
+do
+   if not FL then
+      FL:=true;
+      DOC:=_F_BUX_OP->CREATE_OPS( iif(APPLICATION in List('SPECTRE','TRUST'), 'OP_P_MOVE', 'OP_MOVE'), TransferDate, 'BEGIN', Clear(0), 0 );
+      _F_BUX_OP->MODIFY_OP_VAL(DOC, 'B_DATE', Str(TransferDate));
+      _F_BUX_OP->MODIFY_OP_VAL(DOC, 'E_DATE', Str(TransferDate));
+   end;
+   i:=i+1;
+   DOL:=CREATE_OP_LINE(DOC);
+   //_F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'NUM', Str(i));
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'SUMMA', Str(SUM));
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'VAL', Str(VALUE_ID));
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'CONTRACT', Str(CONTRACT));
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'A_FROM', Str(ACC1));
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'A_TO', Str(ACC2));
+   if APPLICATION in List('SPECTRE','TRUST') then
+      _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'BROKER_FROM', Str(MEDIATOR));
+      _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'BROKER_TO', Str(MEDIATOR));
+   end;
+   _F_BUX_OP->MODIFY_OP_VAL_LINE(DOC, DOL, 'INV_NAME', NAME);
+end;
+if not IsBlank(DOC) then
+   PropVal( ActiveForm+'.OD_DOC_LST', '@Refresh' );
+   _F_DOC->ShowDoc(DOC, true);
+end;   
+0;

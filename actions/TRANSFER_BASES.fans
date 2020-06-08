@@ -1,0 +1,40 @@
+Assert(IsOpen('_CONNECT'), 'Форма доступа к данным не открыта');
+var  done:=0, Replicated:=0, News:=0;
+with 'Данные' do
+  if _CONNECT.BaseLazy.Value='' then
+      StartProgress( 'Репликация данных', 'Узлы сети' );
+     var id, cur, all := Extract( 'ИсходныеДанные', 'select count(*) from bases where base_id<0');
+     DoProgress( 0, cur:=0, all );
+     for 'ИсходныеДанные' select 'select base_id  from bases where base_id<0 order by base_id desc'
+        into id
+     do
+        try
+           _CONNECT->Transfer_Base( id,  _CONNECT.RepTypeGroup.ItemIndex,FALSE,Done );
+           if done > 0 then
+              inc( Replicated );
+              if done = 1 then inc( News ) end
+           end
+        except
+            if ~Question(EXCEPTION.Text+'  Продолжить транзакцию?') then
+                 Replicated:=0; News:=0;
+                 propagate;
+            end;
+        end;
+        DoProgress( 0, inc( cur ), all )
+     end;
+     DoProgress( 0, all, all );
+  else
+      _CONNECT->Transfer_Base( _CONNECT.BaseLazy.Value,  _CONNECT.RepTypeGroup.ItemIndex,TRUE,Done );
+       if done > 0 then
+           inc( Replicated );
+           if done = 1 then inc( News ) end
+       end
+  end;
+  MetaRefresh('Данные','BASES');
+  BreakPoint;
+end;
+if Replicated > 0 then
+   Message('Всего изменений: '+Str( Replicated )+' из них добавлено новых: '+Str( News ));
+else
+   Message('Изменений не было')
+end

@@ -1,0 +1,26 @@
+{Transfer_REG( %REG : integer; %TREE:Integer)}
+
+Assert( ~IsBlank(%REG ) ,'Не задан параметр %REG  (значение регистра)');
+var PARAM_TABLE,
+      ID;
+
+ExtractSQL( 'ИсходныеДанные', 'select S.PARAM_TABLE from OD_REG_TYPES T left join OD_REG_SHAPES S on S.ID=T.REG_SHAPE where  T.TREE=:ID', %TREE,PARAM_TABLE);
+
+if PARAM_TABLE='OD_CLIENTS' then
+  ID:=Transfer_DEPO( %REG, %WithUpdate,Done)
+elsif PARAM_TABLE='OD_FACES' then
+  Transfer_Face( %REG, %WithUpdate, Done, ID)
+elsif PARAM_TABLE='OD_FACE_ACCS' then
+  ID:=Transfer_Account( %REG, %WithUpdate, Done)
+elsif PARAM_TABLE='OD_CHAINS' then
+  ID:=Transfer_Chain( %REG, %WithUpdate, Done)
+elsif PARAM_TABLE='OD_SHARES' then
+  ID:=Transfer_Share( %REG, %WithUpdate, Done)
+elsif PARAM_TABLE='OD_VALUES' then
+  ID:=Transfer_Value( %REG, %WithUpdate, Done)
+elsif PARAM_TABLE='OD_DOCS' then
+  ID:=Transfer_Doc( %REG, %WithUpdate, Done)
+else
+  ID:=%REG
+end;
+ID

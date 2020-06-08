@@ -1,0 +1,174 @@
+//Transfer_Face( %FACE_SELF :string; %WithUpdate :int; Done :integer; SELF_ID:integer ) :Face_id
+Assert(~IsBlank(%FACE_SELF),'Не задан параметр %FACE_SELF (код персоны)');
+%FACE_SELF := Extract('ИсходныеДанные', [select SELF_ID from OD_FACES where ID=:ID], %FACE_SELF);
+
+var s_type96, b_date96, name96, inn96, mnem96, doc_type96, doc_ser96, doc_num96, doc_dat96, doc_end96,DoneF,IsNotFound,counter;
+ExtractSQL( 'ИсходныеДанные',
+   'select S_TYPE, B_DATE, NAME, INN, DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT,DOC_END,MNEM '+
+   ' from OD_FACES where SELF_ID=:ID and LAST_FLAG=1', %FACE_SELF,
+   s_type96, b_date96, name96, inn96, doc_type96, doc_ser96, doc_num96, doc_dat96,doc_end96,mnem96);
+SELF_ID:=Clear(0);
+var face_id, b_date:=clear(now), e_date, vdat, s_type,
+   name, full_name, exec_organ, depot, doc_type, doc_ser, doc_num, doc_dat, doc_end,doc_place, date_birth, date_depth,
+   telex, home_adr, mail_adr, phone, email, fax, inn, mnem, okpo, okonx, reestr, osn_1, osn_2,
+   fio_bug, tel_bug, fio_otv, tel_otv, fio_1, fio_2, dol_1, dol_2, dol_otv, capital, dial_mode, num_lic, beg_lic, end_lic,
+   state, opf, fact_adr, home_kladr,mail_kladr, fact_kladr,
+   phone_work,pensnum,birthplace,
+   branches, kpp, eng_name, imagefile, is_neres, fs, ogrn, ogrn_date, ogrn_place, okogu, okato;
+
+function 'GetFaceFields'
+do
+   var ID;
+   ExtractSQL( 'ИсходныеДанные', 'select  ID, NAME, S_TYPE, B_DATE, E_DATE,'+
+         ' DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT, DOC_END,DOC_PLACE, DATE_BIRTH, DATE_DEPTH,'+
+         ' TELEX, HOME_ADR, MAIL_ADR, HOME_KLADR,MAIL_KLADR, FACT_KLADR, PHONE, EMAIL, FAX, INN, STATE, MNEM,'+
+         ' FACT_ADR, BRANCHES, KPP, ENG_NAME, IMAGEFILE, IS_NERES'+
+      ' from OD_FACES where SELF_ID=:ID and LAST_FLAG=1', %FACE_SELF,
+           ID, name, s_type, vdat, e_date,
+           doc_type, doc_ser, doc_num, doc_dat, doc_end,doc_place, date_birth, date_depth,
+           telex, home_adr, mail_adr, home_kladr,mail_kladr, fact_kladr, phone, email,  fax, inn, state, mnem,
+           fact_adr, branches, kpp, eng_name, imagefile, is_neres );
+
+   if s_type96=1 then//добавление спец. полей юрика
+      ExtractSQL( 'ИсходныеДанные', 'select OSN_1,OSN_2,OKPO, OKONX, FIO_BUG, TEL_BUG, FIO_OTV, TEL_OTV, FIO_1, FIO_2, DOL_1, DOL_2, DOL_OTV, CAPITAL, OPF, REESTR, '+
+         'FS, OGRN, OGRN_DATE, OGRN_PLACE, OKOGU, OKATO, FULL_NAME, EXEC_ORGAN, DEPOT '+
+         'from  OD_U_FACES where FACE=:FACE', ID,
+         osn_1,osn_2,okpo, okonx, fio_bug, tel_bug, fio_otv, tel_otv, fio_1, fio_2, dol_1, dol_2, dol_otv, capital, OPF, reestr,
+         fs, ogrn, ogrn_date, ogrn_place, okogu, okato, full_name, exec_organ, depot );
+      if ~isblank(reestr) then
+         if REESTR = %FACE_SELF
+            then REESTR := Clear(0)
+            else _CONNECT->Transfer_Face( REESTR, 1, DoneF, REESTR) //SAA hd-11009
+         end;
+      end;
+      if ~IsBlank(EXEC_ORGAN) then
+         if EXEC_ORGAN = %FACE_SELF
+            then EXEC_ORGAN := Clear(0)
+            else _CONNECT->Transfer_Face( EXEC_ORGAN, 1, DoneF, EXEC_ORGAN) //SAA hd-11009
+         end;
+      end;
+      if ~IsBlank(DEPOT) then
+         if DEPOT = %FACE_SELF
+            then DEPOT := Clear(0)
+            else _CONNECT->Transfer_Face( DEPOT, 1, DoneF, DEPOT) //SAA hd-11009
+         end;
+      end;
+    elsif s_type96=0 then
+        ExtractSQL('ИсходныеДанные', 'select PHONE_WORK,PENSNUM,BIRTHPLACE from OD_F_FACES where FACE=:FACE', ID, PHONE_WORK,PENSNUM,BIRTHPLACE);
+    end;
+end;
+
+Done := 0;
+
+{поиск по имени}
+counter:=SelectSQL( 'Данные', 'select ID, B_DATE, SELF_ID from OD_FACES where S_TYPE=:S_TYPE AND NAME=:NAME AND LAST_FLAG=1',
+            s_type96, name96,  face_id, b_date,SELF_ID, dummy );
+if (_CONNECT.FaceTypeGroup.ItemIndex = 1) and (inn96<>''  or mnem96<>'') then // по INN или MNEM
+    if (counter<>1)  and  (mnem96<>'')  then {не нашли или их здесь много}
+       counter:=SelectSQL( 'Данные', 'select ID, B_DATE, SELF_ID from OD_FACES where S_TYPE=:S_TYPE AND MNEM=:MNEM AND LAST_FLAG=1',
+            s_type96, mnem96,  face_id, b_date,SELF_ID, dummy );
+       IsNotFound:= (counter<>1); {не нашли или их сдесь много}
+    elsif (counter<>1)  and  (inn96<>'')  then {не нашли или их здесь много}
+       counter:=SelectSQL( 'Данные', 'select ID, B_DATE, SELF_ID from OD_FACES where S_TYPE=:S_TYPE AND INN=:INN AND LAST_FLAG=1',
+            s_type96, inn96,  face_id, b_date,SELF_ID, dummy );
+       IsNotFound:= (counter<>1); {не нашли или их сдесь много}
+    else
+        IsNotFound:=false;
+    end;
+else
+    if counter<>1 then {не нашли или их сдесь много}
+       counter:=SelectSQL( 'Данные', 'select ID, B_DATE, SELF_ID from OD_FACES where S_TYPE=:S_TYPE AND DOC_TYPE=:DOC_TYPE AND  (DOC_SER=:DOC_SER or DOC_SER is NULL) AND  DOC_NUM=:DOC_NUM AND DOC_DAT=:DOC_DAT AND LAST_FLAG=1',
+          s_type96, doc_type96, doc_ser96, doc_num96, doc_dat96,  face_id, b_date,SELF_ID, dummy );
+       IsNotFound:= (counter<>1); {не нашли или их сдесь много}
+    else
+        IsNotFound:=false;
+    end;
+end;
+if (%WithUpdate<>2) and  IsNotFound then //проверка наличия субъекта
+   //такого субъекта еще нет; будем заводить
+   GetFaceFields;
+   Face_id := Gen_ID( 'Данные', 'OD_FACES_ID_GEN', 1 );
+   ExecSQL( 'Данные', 'insert into OD_FACES ( ID, NAME, S_TYPE, B_DATE, E_DATE, MNEM, '+
+         ' DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT, DOC_END,DOC_PLACE, DATE_BIRTH, DATE_DEPTH,'+
+         ' TELEX, HOME_ADR, MAIL_ADR, HOME_KLADR,MAIL_KLADR, FACT_KLADR, PHONE, EMAIL, FAX, INN, STATE,'+
+         ' FACT_ADR, KPP, ENG_NAME, IMAGEFILE, IS_NERES)'+ //, BRANCHES  // VDS 31.08.2005
+      ' values ( :id, :Name, :s_type, :b_date, :e_date, :mnem, :doc_type, :doc_ser, :doc_num, :doc_dat, :doc_end,'+
+         ' :doc_place, :date_birth, :date_depth, :telex, :home_adr, :mail_adr, :home_kladr, :mail_kladr, :fact_kladr, :phone,'+
+         ' :email, :fax, :inn, :state,'+
+         ' :fact_adr, :kpp, :eng_name, :imagefile, :is_neres)',
+      face_id, name, s_type, vdat, e_date, mnem, doc_type, doc_ser, doc_num, doc_dat,doc_end,
+         doc_place, date_birth, date_depth, telex, home_adr, mail_adr, home_kladr,mail_kladr, fact_kladr, phone, email,
+         fax, inn, state,
+         fact_adr, kpp, eng_name, imagefile, is_neres );  //, BRANCHES  // VDS 31.08.2005
+   if s_type96=0 then //добавляем спец. поля физика
+      ExecSQL( 'Данные', 'insert into OD_F_FACES ( FACE,PHONE_WORK,PENSNUM,BIRTHPLACE ) values ( :Face, :PHONE_WORK,:PENSNUM,:BIRTHPLACE  )', Face_id,PHONE_WORK,PENSNUM,BIRTHPLACE)
+   elsif s_type96=1 then //добавление спец. полей юрика
+      ExecSQL( 'Данные', 'insert into OD_U_FACES ( FACE, OKPO, OKONX, '+
+            ' FIO_BUG, TEL_BUG, FIO_OTV, TEL_OTV, FIO_1, FIO_2, DOL_1, DOL_2, DOL_OTV, CAPITAL, OPF, REESTR, OSN_1, OSN_2,'+
+            ' FS, OGRN, OGRN_DATE, OGRN_PLACE, OKOGU, OKATO, FULL_NAME, EXEC_ORGAN, DEPOT) '+
+         'values ( :Face,  :okpo, :okonx, '+
+            ' :fio_bug, :tel_bug, :fio_otv, :tel_otv, :fio_1, :fio_2, :dol_1, :dol_2, :dol_otv, :capital, :opf,:reestr, :osn_1, :osn_2,'+
+            ' :FS, :OGRN, :OGRN_DATE, :OGRN_PLACE, :OKOGU, :OKATO, :FULL_NAME, :EXEC_ORGAN, :DEPOT)',
+         Face_id, okpo, okonx, fio_bug, tel_bug, fio_otv, tel_otv,
+            fio_1, fio_2, dol_1, dol_2, dol_otv, capital, OPF, reestr, osn_1, osn_2,
+            fs, ogrn, ogrn_date, ogrn_place, okogu, okato, full_name, exec_organ,depot );
+      {а может это банк}
+   end;//if
+   //добавим виды деятельности
+   SELF_ID:= Extract( 'Данные', 'select   SELF_ID from OD_FACES where ID=:ID',  Face_id);
+   for 'ИсходныеДанные' select 'select DIAL_MODE, NUM_LIC,BEG_LIC, END_LIC from OD_P_FACES  where FACE=:FACE'
+         from %FACE_SELF
+         into dial_mode,num_lic,beg_lic,end_lic
+   do
+          if Extract('Данные', 'select count(*) from OD_P_FACES where FACE=:FACE and DIAL_MODE=:mode',SELF_ID,dial_mode)=0 then
+             ExecSQL( 'Данные', 'insert into OD_P_FACES ( FACE, DIAL_MODE, NUM_LIC, BEG_LIC, END_LIC ) '+
+             'values ( :face, :mode, :l_nom, :l_dat_vid, :l_dat_end )',
+             SELF_ID, dial_mode,num_lic,beg_lic,end_lic )
+          end;
+   end;
+   Done := 1 //был insert
+elsif ~IsNotFound then // субъект найден
+ SELF_ID:= Extract( 'Данные', 'select SELF_ID from OD_FACES where ID=:ID',  Face_id);
+ if %WithUpdate>0 then
+   if (b_date96 > b_date) or (%WithUpdate=2) then //субъект обновился, обновим и мы
+      GetFaceFields;
+      ExecSQL( 'Данные', 'update OD_FACES set NAME=:A, DOC_TYPE=:B, DOC_SER=:C, DOC_NUM=:D,'+
+         ' DOC_DAT=:E, DOC_END=:DOC_END,DOC_PLACE=:F, DATE_BIRTH=:G, DATE_DEPTH=:H, HOME_ADR=:I, MAIL_ADR=:J,'+
+         ' HOME_KLADR=:HOME_KLADR,MAIL_KLADR=:MAIL_KLADR, FACT_KLADR=:FACT_KLADR, PHONE=:L, EMAIL=:M, FAX=:N, INN=:O, STATE=:P, B_DATE=:Q, MNEM=:R,'+
+         ' FACT_ADR=:S, KPP=:AD, ENG_NAME=:AE, IMAGEFILE=:AF, IS_NERES=:AI,'+    // , BRANCHES=:AC  // VDS 31.08.2005
+         ' UPTYPE=7 where ID=:id',
+         Name, doc_type, doc_ser, doc_num,
+         doc_dat, DOC_END,doc_place, date_birth, date_depth, home_adr, mail_adr,
+         home_kladr,mail_kladr, fact_kladr, phone, email, fax, inn, state, vdat, mnem,
+         fact_adr, kpp, eng_name, imagefile, is_neres,    // , BRANCHES  // VDS 31.08.2005
+         Face_id );
+      if s_type=1 then // теперь то-же самое над юриками
+         ExecSQL( 'Данные', 'update OD_U_FACES set OKPO=:OKPO, OKONX=:OKONX, FIO_BUG=:FIO_BUG,'+
+            ' TEL_BUG=:TEL_BUG, FIO_OTV=:FIO_OTV, TEL_OTV=:TEL_OTV, FIO_1=:FIO_1, FIO_2=:FIO_2, DOL_1=:DOL_1, DOL_2=:DOL_2, DOL_OTV=:IDOL_OTV, CAPITAL=:CAPITAL, OPF=:OPF, REESTR=:REESTR, OSN_1=:OSN_1, OSN_2=:OSN_2,'+
+            ' FS=:FS, OGRN=:OGRN, OGRN_DATE=:OGRN_DATE, OGRN_PLACE=:OGRN_PLACE, OKOGU=:OKOGU, OKATO=:OKATO, FULL_NAME=:FULL_NAME, EXEC_ORGAN=:EXEC_ORGAN, DEPOT=:DEPOT, '+
+            ' UPTYPE=7 where FACE=:id',
+            okpo, okonx, fio_bug, tel_bug, fio_otv, tel_otv, fio_1, fio_2, dol_1, dol_2, dol_otv,
+            capital, OPF, reestr, osn_1, osn_2,
+            fs, ogrn, ogrn_date, ogrn_place, okogu, okato, full_name, exec_organ, depot,
+            Face_id );
+      elsif s_type=0 then
+         ExecSQL( 'Данные', 'update OD_F_FACES set PHONE_WORK=:PHONE_WORK,PENSNUM=:PENSNUM,BIRTHPLACE=:BIRTHPLACE where FACE=:FACE', PHONE_WORK, PENSNUM, BIRTHPLACE, Face_id)
+      end;
+      Done := 2 //был update
+   end;
+   for 'ИсходныеДанные' select 'select DIAL_MODE,NUM_LIC,BEG_LIC,END_LIC FROM OD_P_FACES  WHERE FACE=:FACE' // виды деятельности обновляем всегда
+         from %FACE_SELF
+         into dial_mode,num_lic,beg_lic,end_lic
+   do
+         if Extract('Данные', 'select count(*) from OD_P_FACES where FACE=:FACE and DIAL_MODE=:MODE',SELF_ID,dial_mode)=0 then
+               ExecSQL( 'Данные', 'insert into OD_P_FACES ( FACE, DIAL_MODE, NUM_LIC, BEG_LIC, END_LIC ) '+
+               'values ( :face, :mode, :l_nom, :l_dat_vid, :l_dat_end )',
+               SELF_ID, dial_mode,num_lic,beg_lic,end_lic )
+         else
+               ExecSQL( 'Данные', 'update OD_P_FACES SET  NUM_LIC=:NUM_LIC, BEG_LIC=:BEG_LIC, END_LIC=:END_LIC where  FACE=:FACE AND DIAL_MODE=:mode',
+                num_lic,beg_lic,end_lic,SELF_ID,dial_mode )
+         end;
+   end;
+ end
+end;
+Face_id

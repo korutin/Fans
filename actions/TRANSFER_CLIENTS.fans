@@ -1,0 +1,42 @@
+Assert(IsOpen('_CONNECT'),'Форма доступа к данным не открыта');
+var  done:=0, Replicated:=0, News:=0;
+with 'Данные' do
+  if _CONNECT.ClientLazy.Value='' then
+      StartProgress( 'Репликация данных', 'Депо счета' );
+     var id, cur, all := Extract( 'ИсходныеДанные', 'select count(*) from OD_CLIENTS  where PLAN_ID=:PLAN_ID and TYPE_ in (1,2)', _CONNECT.PLAN_ID.Value);
+     DoProgress( 0, cur:=0, all );
+     for 'ИсходныеДанные' select 'SELECT ID  FROM OD_CLIENTS WHERE PLAN_ID=:PLAN_ID and TYPE_ IN (1,2) ORDER BY NUMBER'
+        from _CONNECT.PLAN_ID.Value
+        into id
+     do
+        try
+           _CONNECT->Transfer_Client_Account( id,  _CONNECT.RepTypeGroup.ItemIndex,Done );
+           if done > 0 then
+              inc( Replicated );
+              if done = 1 then inc( News ) end
+           end
+        except
+            if ~Question(EXCEPTION.Text+'  Продолжить транзакцию?') then
+                 Replicated:=0; News:=0;
+                 propagate;
+            end;
+        end;
+        DoProgress( 0, inc( cur ), all )
+     end;
+     DoProgress( 0, all, all );
+  else
+      _CONNECT->Transfer_Client_Account( _CONNECT.ClientLazy.Value,  _CONNECT.RepTypeGroup.ItemIndex,Done );
+       if done > 0 then
+           inc( Replicated );
+           if done = 1 then inc( News ) end
+       end
+  end;
+  MetaRefresh('Данные','OD_CLIENTS');
+  BreakPoint;
+end;
+if Replicated > 0 then
+   Message('Всего изменений: '+Str( Replicated )+' из них добавлено новых: '+Str( News ));
+else
+   Message('Изменений не было')
+end
+

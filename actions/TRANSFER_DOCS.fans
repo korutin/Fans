@@ -1,0 +1,35 @@
+Assert(IsOpen('_CONNECT'),'Форма доступа к данным не открыта');
+var  done:=0, Replicated:=0;
+with 'Данные' do
+  if _CONNECT.ExtWhos.Value<>'' then
+      StartProgress( 'Репликация данных', 'Документы' );
+     var id, cur, all := Extract( 'ИсходныеДанные', 'select count(*) from OD_DOCS where  WHOS=:WHOS and D_DATE>=:B_DATE and D_DATE<:E_DATE',_CONNECT.ExtWhos.Value,Date(owner.B_DATE.Date), Date(owner.E_DATE.Date));
+     DoProgress( 0, cur:=0, all );
+     for 'ИсходныеДанные' select 'select ID from OD_DOCS where WHOS=:WHOS and D_DATE>=:B_DATE and D_DATE<:E_DATE order by D_DATE, ID'
+        from _CONNECT.ExtWhos.Value,Date(owner.B_DATE.Date), Date(owner.E_DATE.Date) 
+        into id
+     do
+        try
+           _CONNECT->Transfer_Doc( id,  _CONNECT.RepTypeGroup.ItemIndex,Done );
+           if done > 0 then
+              inc( Replicated );
+           end
+        except
+            if ~Question(EXCEPTION.Text+'  Продолжить транзакцию?') then
+                 Replicated:=0;
+                 propagate;
+            end;
+        end;
+        DoProgress( 0, inc( cur ), all )
+     end;
+     DoProgress( 0, all, all );
+  else
+     Raise('Не заданf плоскость во внешней базе даных')
+  end;
+end;
+if Replicated > 0 then
+   Message('Всего изменений: '+Str( Replicated )+'  документов');
+else
+   Message('Изменений не было')
+end
+

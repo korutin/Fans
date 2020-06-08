@@ -1,0 +1,87 @@
+// Transfer_DEPO( %Client_id : integer; %WithUpdate :boolean; Done:int ) :Client_id
+
+Assert( ~IsBlank(%Client_id) ,'Не задан параметр %Clien_id (счет депо)');
+var NUMBER_src, STATE_src, D_OPEN_src, D_CLOSE_src, Z_DATE_src, LINK_NUMBER_src, FACE_src, RELATION_src, SUBTYPE_src,
+    NAME_src, TYPE_src, DD_DATE_src, DD_NUM_src, IS_TERM_src, IS_MANAGER_src, IS_VOICE_src, IS_PRIV_src, IS_SOV_src, IS_NZ_src, IS_BCLIENT_src,
+    INCOME_MOD_src, INCOME_ACC_src, INCOME_ADR_src, INCOME_REC_src, INCOME_FACE_src, O_MAIL_MOD_src, O_MAIL_ADR_src, I_MAIL_MOD_src, I_MAIL_ADR_src,
+    TARIF_src, EXTRA_INT_src, EXTRA_TYPE_src, PARENT:=clear(0), PARENT_NUMBER,
+    DoneF, IsNotFound,
+    ID, SELF_ID, PLAN_ID, FACE, INCOME_ACC:=clear(0), INCOME_FACE:=clear(0), NAME, Q;
+
+ExtractSQL( 'ИсходныеДанные', 'select C.NUMBER, C.STATE, C.D_OPEN, C.D_CLOSE, r.Z_DATE, C.FACE, C.RELATION, C.SUBTYPE, C.DD_DATE, C.DD_NUM,'+
+   ' C.NAME, C.TYPE_, R.LINK_NUMBER, c.IS_TERM, c.IS_MANAGER, c.IS_VOICE, C.IS_PRIV, C.IS_SOV, R.IS_NZ, c.IS_BCLIENT, '+
+   ' r.INCOME_MOD, r.INCOME_ACC, r.INCOME_ADR, r.INCOME_REC, r.INCOME_FACE, r.O_MAIL_MOD, r.O_MAIL_ADR, r.I_MAIL_MOD, r.I_MAIL_ADR, '+
+   ' r.TARIF, r.EXTRA_INT, r.EXTRA_TYPE, p.NUMBER '+
+   ' from OD_CLIENTS c '+
+   ' left join OD_CLIENTS_REC r on r.CLIENT=c.SELF_ID and r.E_DATE=''01.01.9999'' '+
+   ' left join OD_CLIENTS p on p.ID=c.PARENT '+
+   ' where  c.ID=:ID', %Client_id,
+   NUMBER_src, STATE_src, D_OPEN_src, D_CLOSE_src, Z_DATE_src, FACE_src, RELATION_src, SUBTYPE_src, DD_DATE_src, DD_NUM_src,
+   NAME_src, TYPE_src, LINK_NUMBER_src, IS_TERM_src, IS_MANAGER_src, IS_VOICE_src, IS_PRIV_src, IS_SOV_src, IS_NZ_src, IS_BCLIENT_src,
+   INCOME_MOD_src, INCOME_ACC_src, INCOME_ADR_src, INCOME_REC_src, INCOME_FACE_src, O_MAIL_MOD_src, O_MAIL_ADR_src, I_MAIL_MOD_src, I_MAIL_ADR_src,
+   TARIF_src, EXTRA_INT_src, EXTRA_TYPE_src, PARENT_NUMBER );
+
+FACE    := owner->Transfer_Face(FACE_src, true, DoneF, FACE_src);
+PLAN_ID := owner->Transfer_Plan(owner.PLAN_ID.Value);
+if not IsNull(INCOME_FACE_src) then
+   INCOME_FACE := owner->Transfer_Face(INCOME_FACE_src, false, DoneF, INCOME_FACE_src);
+end;
+if not IsNull(INCOME_ACC_src) then
+   INCOME_ACC := owner->Transfer_Account(INCOME_ACC_src, false, DoneF);
+end;
+Done := -1;
+IsNotFound := (ExtractSQL( 'Данные', 'select ID from OD_CLIENTS where NUMBER=:NUMBER and PLAN_ID=:PLAN_ID',
+                                      NUMBER_src, PLAN_ID, ID) = 0);
+SELF_ID := ID;
+
+
+if (%WithUpdate<>2) and IsNotFound then //проверка наличия счета
+//такого счета еще нет; будем заводить
+    if not IsBlank(PARENT_NUMBER) then
+       PARENT := Extract('Данные', [select ID from OD_CLIENTS where PLAN_ID=:P and NUMBER=:N], PLAN_ID, PARENT_NUMBER);
+       Assert(not IsNull(PARENT), 'Старший счёт '+PARENT_NUMBER+' не найден. Он должен был быть реплицирован заранее.');
+    end;
+    ID := Gen_Id( 'Данные', 'OD_CLIENTS_ID_GEN', 1 );
+    SELF_ID := ID;
+    ExecProc('OD_PR_INSERT_CLIENT','Данные', ID,
+       NUMBER_src, TYPE_src, SUBTYPE_src, FACE, RELATION_src, PARENT,
+       PLAN_ID, {'T', 1, 1} IS_TERM_src, IS_MANAGER_src, IS_VOICE_src, IS_PRIV_src, IS_SOV_src, IS_NZ_src, IS_BCLIENT_src,
+       STATE_src, D_OPEN_src, D_CLOSE_src, Z_DATE_src, Clear(0){oper}, NAME_src, LINK_NUMBER_src,
+       INCOME_MOD_src, INCOME_ACC, INCOME_ADR_src, INCOME_REC_src, INCOME_FACE, O_MAIL_MOD_src, O_MAIL_ADR_src, I_MAIL_MOD_src, I_MAIL_ADR_src,
+       DD_DATE_src, DD_NUM_src,
+       Clear(0),//PLACE
+       Clear(0),//ISSUER
+       TARIF_src, EXTRA_INT_src, EXTRA_TYPE_src );
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and ~IsNotFound then
+   if NAME_src<>NAME then
+      ExecSQL( 'Данные', 'update OD_CLIENTS set NAME=:N, STATE=:S, D_CLOSE=:DC where PLAN_ID=:PLAN_ID and NUMBER=:NUM',
+         NAME_src, STATE_src, D_CLOSE_src, PLAN_ID, NUMBER_src);
+      Done := 2; //был update
+   else
+      Done := 0;
+   end;
+end;
+if Done>=0 then // проверим ещё разделы
+   for 'ИсходныеДанные' select
+      [select NAME, NUMBER, STATE, LEV, D_OPEN, D_CLOSE, TYPE_, FACE
+       from OD_CLIENTS where SELF_ID=:ID and ID<>SELF_ID]
+      from %Client_id
+      using Q
+   do
+      ID := Extract('Данные', [select ID from OD_CLIENTS where NUMBER=:N and SELF_ID=:S and SELF_ID<>ID], Q._NUMBER, SELF_ID);
+      if IsNull(ID) then
+         ID := Gen_ID('Данные', 'OD_CLIENTS_ID_GEN', 1);
+         ExecSQL('Данные', [insert into OD_CLIENTS (ID, IS_TERM, NAME, NUMBER, PARENT, SELF_ID, PLAN_ID, STATE, LEV, D_OPEN, D_CLOSE, TYPE_, FACE)
+                            values (:a,:b,:c,:d,:e,:f,:g,:h,:i,:j,:k,:l,:m)],
+            ID, 'T', Q._NAME, Q._NUMBER, SELF_ID, SELF_ID, PLAN_ID, Q._STATE, Q._LEV, Q._D_OPEN, Q._D_CLOSE, Q._TYPE_, Q._FACE);
+      else
+         ExecSQL('Данные', [update OD_CLIENTS set NAME=:a, STATE=:b, D_CLOSE=:c where ID=:ID],
+            Q._NAME, Q._STATE, Q._D_CLOSE, ID );
+      end;
+      if Done=0 then Done:=2 end; //были изменения
+   end
+end;
+ID
+
+

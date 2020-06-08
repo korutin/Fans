@@ -1,0 +1,374 @@
+//Transfer_Share( %Share_id : integer; %WithUpdate :boolean; Done:int; WithoutMarket :list )
+
+Assert( ~IsBlank(%Share_id) ,'Не задан параметр %Share_id (счет депо)');
+var SYSNAME96, NAME96, CLASS96, ISIN96, MFU96, CFI96, B_DATE96, DONEF, WASEXIST,
+    ID, MNEM, NUM_REG, DATE_REG, ORG_REG, COUNT_, BIRTHDATE, DEATHDATE, CLASS, TYPE_, MODE, ISSUER, NOMINAL, NOM_VAL,
+    ISNUM, ISSUENUM, B_DATE,PMFU,REP_DATE;
+ExtractSQL( 'ИсходныеДанные', 'select v.SYSNAME, v.NAME, v.ISIN, v.MFU, v.B_DATE, s.CLASS, v.CFI '+
+              'from OD_SHARES s join OD_VALUES v on v.ID=s.ID where s.ID=:ID', %Share_id,   SYSNAME96, NAME96, ISIN96, MFU96, B_DATE96, CLASS96,CFI96);
+
+function 'Insert0'
+do
+      ExtractSQL( 'ИсходныеДанные', 'select MNEM, NUM_REG, DATE_REG,ORG_REG,COUNT_,BIRTHDATE,DEATHDATE,CLASS,TYPE_,MODE,ISSUER,NOMINAL,NOM_VAL,ISNUM,ISSUENUM,PMFU,REP_DATE '+
+            'from OD_SHARES where ID=:ID', %Share_id,
+          Mnem, Num_Reg, DATE_REG,Org_Reg,Count_,BirthDate,DeathDate,Class,Type_,Mode,Issuer,Nominal,Nom_Val,IsNum,ISSUENUM,PMFU,REP_DATE);
+     if ~IsBlank(Org_Reg) then
+         _CONNECT->Transfer_Face(Org_Reg,1,DoneF,Org_Reg);
+     end;
+     if ~IsBlank(Issuer) then
+         _CONNECT->Transfer_Face(Issuer,1,DoneF,Issuer);
+     end;
+     Nom_Val:=_CONNECT->Transfer_Value(Nom_Val,1,DoneF);
+     ExecSQL( 'Данные', 'insert into OD_SHARES (ID,BIRTHDATE,CLASS,COUNT_,DEATHDATE,ISNUM,ISSUER,MNEM,MODE,NOMINAL,NOM_VAL,NUM_REG,ORG_REG,ISSUENUM,TYPE_,DATE_REG,PMFU,REP_DATE)  '+
+               'VALUES (:ID, :BIRTHDATE, :CLASS, :COUNT_, :DEATHDATE, :ISNUM,:ISSUER, :MNEM,:MODE,:NOMINAL,:NOM_VAL,:NUM_REG,:ORG_REG,:ISSUENUM,:TYPE_,:DATE_REG,:PMFU,:REP_DATE)',
+               ID,BIRTHDATE,CLASS,COUNT_,DEATHDATE,ISNUM,ISSUER,MNEM,MODE,NOMINAL,NOM_VAL,NUM_REG,ORG_REG,ISSUENUM,TYPE_,DATE_REG,PMFU,REP_DATE);
+end;
+
+function 'Insert1' // акция
+do
+var MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE;
+      ExtractSQL( 'ИсходныеДанные', 'select MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE '+
+            'from OD_A_SHARES where SHARE=:share', %Share_id,
+            MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE);
+      ExecSQL( 'Данные','insert into OD_A_SHARES (SHARE,MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE)  '+
+      'VALUES (:SHARE,:MAXNOMINAL,:MAXSHARE,:MAXVOICE,:VOICECOUNT,:DIVID_TYPE,:DIVID_RATE)',
+               ID,MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE);
+end;
+
+function 'Insert2' //облигация, сертификат
+do
+var Q, MORTGAGER:=clear(0), DEBTOR:=clear(0), DOC_NUM:=clear(''), DOC_DAT:=clear(now);
+    for 'ИсходныеДанные' select [select * from OD_O_SHARES where SHARE=:s]
+      from %SHARE_ID
+      using Q // запрос всего на одну запись, но выбрана именно эта конструкция со "*" ради совместимости со старыми версиями
+    do
+       if not IsBlank(Q._MORTGAGER) then
+          _connect->Transfer_Face(Q._MORTGAGER, false, DoneF, MORTGAGER)
+       end;
+       if not IsBlank(Q._DEBTOR) then
+          _connect->Transfer_Face(Q._DEBTOR, false, DoneF, DEBTOR)
+       end;
+       if Q.?DOC_NUM then DOC_NUM:=Q._DOC_NUM end;
+       if Q.?DOC_DAT then DOC_DAT:=Q._DOC_DAT end;
+       ExecSQL( 'Данные',  'insert  into  OD_O_SHARES  (SHARE, IS_SAVE, IS_JUNIOR, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR, DOC_NUM, DOC_DAT) '+
+                                            ' values ( :SHARE,:IS_SAVE,:IS_JUNIOR,:IS_CONV,:PERIOD,:PERCENT_,:DAYS,:PRICE,:PERIOD_M,:STAVKA,:IS_GG,:NKD_MFU,:P_MODEL,:MORTGAGER,:DEBTOR,:DOC_NUM,:DOC_DAT)',
+                                                        ID, Q._IS_SAVE, Q._IS_JUNIOR, Q._IS_CONV, Q._PERIOD, Q._PERCENT_, Q._DAYS, Q._PRICE, Q._PERIOD_M, Q._STAVKA, Q._IS_GG, Q._NKD_MFU, Q._P_MODEL, MORTGAGER, DEBTOR, DOC_NUM, DOC_DAT);
+    end;
+
+var B_DATE, E_DATE, IS_PAY, SUMMA, PERCENT_, IS_PERCENT, DELTA, B_PAY, E_PAY, P_DATE, O_PRICE,O_TYPE,ACTUAL_DATE;
+    ExecSQL( 'Данные','delete from OD_COUPONS where SHARE=:SHARE',ID);
+    for  'ИсходныеДанные' select 'select B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,IS_PERCENT,DELTA,B_PAY,E_PAY,P_DATE,O_PRICE from OD_COUPONS where SHARE=:SHARE'
+    from %SHARE_ID
+    into B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,IS_PERCENT,DELTA,B_PAY,E_PAY,P_DATE,O_PRICE
+    do
+        try
+          ExecSQL( 'Данные','insert into OD_COUPONS (B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,SHARE,IS_PERCENT,DELTA,B_PAY,E_PAY,P_DATE,O_PRICE) '+
+          'values (:B_DATE,:E_DATE,:IS_PAY,:SUMMA,:PERCENT_,:SHARE,:IS_PERCENT,:DELTA,:B_PAY,:E_PAY,:P_DATE,:O_PRICE)',B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,ID,IS_PERCENT,DELTA,B_PAY,E_PAY,P_DATE,O_PRICE);
+        except
+          ExecSQL( 'Данные','update OD_COUPONS set IS_PAY=:IS_PAY,SUMMA=:SUMMA,PERCENT_=:PERCENT,IS_PERCENT=:IS_PERCENT,DELTA=:DELTA,B_PAY=:B_PAY,E_PAY=:E_PAY,P_DATE=:P_DATE,O_PRICE=:O_PRICE where SHARE=:SHARE and B_DATE=:B_DATE and E_DATE=:E_DATE ',
+             IS_PAY,SUMMA,PERCENT_,IS_PERCENT,DELTA,B_PAY,E_PAY,P_DATE,O_PRICE,  ID,B_DATE,E_DATE);
+        end;
+    end;
+
+    ExecSQL( 'Данные','delete from OD_OFFERS where SHARE=:SHARE',ID);
+    for  'ИсходныеДанные' select 'select B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE from OD_OFFERS where SHARE=:SHARE'
+    from %SHARE_ID
+    into B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE
+    do
+        try
+          ExecSQL( 'Данные','insert into OD_OFFERS (B_DATE,E_DATE,SHARE,O_PRICE,O_TYPE,ACTUAL_DATE) '+
+          'values (:B_DATE,:E_DATE,:SHARE,:P_DATE,:O_PRICE,:O_TYPE,:ACTUAL_DATE)',B_DATE,E_DATE,ID,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE);
+        except
+          ExecSQL( 'Данные','update OD_OFFERS set P_DATE=:P_DATE,O_PRICE=:O_PRICE,O_TYPE=:O_TYPE,E_DATE=:E_DATE,ACTUAL_DATE=:ACTUAL_DATE where SHARE=:SHARE and B_DATE=:B_DATE',
+             P_DATE,O_PRICE,O_TYPE,E_DATE,ACTUAL_DATE, ID,B_DATE);
+        end;
+    end;
+end;
+
+function 'Insert3' //вексель
+do
+var Is_Accept,Is_Pass,BirthPlace,DeathPlace,PERCENT_,P_DATE,P_END,STOP_DATE;
+    ExtractSQL( 'ИсходныеДанные', 'select IS_ACCEPT,IS_PASS,BIRTHPLACE,DEATHPLACE,PERCENT_,P_DATE,P_END,STOP_DATE '+
+          'from OD_V_SHARES where SHARE=:SHARE', %Share_id, Is_Accept,Is_Pass,BirthPlace,DeathPlace,PERCENT_,P_DATE,P_END,STOP_DATE);
+    ExecSQL( 'Данные','insert into OD_V_SHARES (SHARE, IS_ACCEPT, IS_PASS, BIRTHPLACE, DEATHPLACE, PERCENT_, P_DATE,P_END, STOP_DATE) '+
+             'VALUES (:SHARE, :Is_Accept, :Is_Pass, :BirthPlace, :DeathPlace, :PERCENT_, :P_DATE,:P_END, :STOP_DATE)',
+             ID, Is_Accept, Is_Pass, BirthPlace, DeathPlace, PERCENT_, P_DATE, P_END,STOP_DATE);
+end;
+
+function 'Insert45'
+do
+var amount,price,valuta,contract,is_vargin,IS_CLEAR;
+    ExtractSQL( 'ИсходныеДанные', 'select AMOUNT,PRICE,VALUTA,CONTRACT,IS_VARGIN,IS_CLEAR '+
+          'from OD_T_SHARES where SHARE=:share', %Share_id, amount,price,valuta,contract,is_vargin,IS_CLEAR);
+    valuta:=_CONNECT->Transfer_Value(valuta,1,DoneF);
+    ExecSQL( 'Данные','insert into OD_T_SHARES (SHARE,AMOUNT,PRICE,VALUTA,CONTRACT,IS_VARGIN,IS_CLEAR) '+
+             'VALUES (:SHARE,:AMOUNT,:PRICE,:VALUTA,:CONTRACT,:IS_VARGIN,:IS_CLEAR)', ID,amount,price,valuta,contract,is_vargin,IS_CLEAR);
+end;
+
+function 'Insert12' //закладные
+do
+var IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR,
+    MORTGAGER_ID, MORTGAGER_NEW, i, DEBTOR_ID, DEBTOR_NEW,DOC_NUM,DOC_DAT;
+
+    ExtractSQL( 'ИсходныеДанные',
+                [select IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR,DOC_NUM,DOC_DAT
+                 from OD_O_SHARES where SHARE=:share], %Share_id,
+           IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR,DOC_NUM,DOC_DAT);
+
+    MORTGAGER_NEW:='';
+    if ~IsBlank(MORTGAGER) then
+       i:=1;
+       MORTGAGER_ID:=_Metal_F->Token(MORTGAGER, ',', i);
+       while ~IsBlank(MORTGAGER_ID) do
+          _CONNECT->Transfer_Face(MORTGAGER_ID,1,DoneF,MORTGAGER_ID);
+          MORTGAGER_NEW:=MORTGAGER_NEW+iif(IsBlank(MORTGAGER_NEW),"",",")+Str(MORTGAGER_ID);
+          Inc(i);
+          MORTGAGER_ID:=_Metal_F->Token(MORTGAGER, ',', i);
+       end;
+    end;
+    DEBTOR_NEW:='';
+    if ~IsBlank(DEBTOR) then
+       i:=1;
+       DEBTOR_ID:=_Metal_F->Token(DEBTOR, ',', i);
+       while ~IsBlank(DEBTOR_ID) do
+          _CONNECT->Transfer_Face(DEBTOR_ID,1,DoneF,DEBTOR_ID);
+          DEBTOR_NEW:=DEBTOR_NEW+iif(IsBlank(DEBTOR_NEW),"",",")+Str(DEBTOR_ID);
+          Inc(i);
+          DEBTOR_ID:=_Metal_F->Token(DEBTOR, ',', i);
+       end;
+    end;
+
+    ExecSQL( 'Данные',
+             [insert into OD_O_SHARES (SHARE,IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR,DOC_NUM,DOC_DAT)
+              VALUES (:SHARE, :IS_SAVE, :IS_CONV, :PERIOD, :PERCENT_, :DAYS, :PRICE, :PERIOD_M, :STAVKA, :IS_GG, :NKD_MFU, :P_MODEL, :MORTGAGER, :DEBTOR,:DOC_NUM,:DOC_DAT)],
+          ID,IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER_NEW, DEBTOR_NEW,DOC_NUM,DOC_DAT);
+end;
+
+function 'Update12' //закладные
+do
+var IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR,
+    MORTGAGER_ID, MORTGAGER_NEW, i, DEBTOR_ID, DEBTOR_NEW;
+      ExtractSQL( 'ИсходныеДанные',
+                  [select IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR
+                   from OD_O_SHARES where SHARE=:share], %Share_id,
+           IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER, DEBTOR);
+
+      MORTGAGER_NEW:='';
+      if ~IsBlank(MORTGAGER) then
+         i:=1;
+         MORTGAGER_ID:=_Metal_F->Token(MORTGAGER, ',', i);
+         while ~IsBlank(MORTGAGER_ID) do
+            _CONNECT->Transfer_Face(MORTGAGER_ID,1,DoneF,MORTGAGER_ID);
+            MORTGAGER_NEW:=MORTGAGER_NEW+iif(IsBlank(MORTGAGER_NEW),"",",")+Str(MORTGAGER_ID);
+            Inc(i);
+            MORTGAGER_ID:=_Metal_F->Token(MORTGAGER, ',', i);
+         end;
+      end;
+      DEBTOR_NEW:='';
+      if ~IsBlank(DEBTOR) then
+         i:=1;
+         DEBTOR_ID:=_Metal_F->Token(DEBTOR, ',', i);
+         while ~IsBlank(DEBTOR_ID) do
+            _CONNECT->Transfer_Face(DEBTOR_ID,1,DoneF,DEBTOR_ID);
+            DEBTOR_NEW:=DEBTOR_NEW+iif(IsBlank(DEBTOR_NEW),"",",")+Str(DEBTOR_ID);
+            Inc(i);
+            DEBTOR_ID:=_Metal_F->Token(DEBTOR, ',', i);
+         end;
+      end;
+
+      ExecSQL( 'Данные',
+               [update OD_O_SHARES SET IS_SAVE=:IS_SAVE, IS_CONV=:IS_CONV, PERIOD=:PERIOD, PERCENT_=:PERCENT_, DAYS=:DAYS, PRICE=:PRICE, PERIOD_M=:PERIOD_M, STAVKA=:STAVKA, IS_GG=:IS_GG,
+                                       NKD_MFU=:NKD_MFU, P_MODEL=:P_MODEL, MORTGAGER=:MORTGAGER, DEBTOR=:DEBTOR WHERE SHARE=:SHARE],
+          IS_SAVE, IS_CONV, PERIOD, PERCENT_, DAYS, PRICE, PERIOD_M, STAVKA, IS_GG, NKD_MFU, P_MODEL, MORTGAGER_NEW, DEBTOR_NEW, ID);
+end;
+
+function 'Update0'
+do
+var reestr;
+    ExtractSQL( 'ИсходныеДанные', 'select MNEM, NUM_REG, ORG_REG,COUNT_,BIRTHDATE,DEATHDATE,CLASS,TYPE_,MODE,ISSUER,NOMINAL,NOM_VAL,ISNUM,ISSUENUM '+
+      'from OD_SHARES where ID=:ID', %Share_id,
+       Mnem, Num_Reg, Org_Reg,Count_,BirthDate,DeathDate,Class,Type_,Mode,Issuer,Nominal,Nom_Val,IsNum,ISSUENUM);
+    if ~IsBlank(Org_Reg) then
+        _CONNECT->Transfer_Face(Org_Reg,1,DoneF,Org_Reg);
+    end;
+    if ~IsBlank(Issuer) then
+        reestr:= Extract( 'ИсходныеДанные', [select u.REESTR from OD_FACES f
+            left join OD_U_FACES u on u.FACE=f.ID
+            where f.SELF_ID=:ID and f.LAST_FLAG=1], Issuer);
+        _CONNECT->Transfer_Face(Issuer,%WithUpdate,DoneF,Issuer);
+        if ~IsBlank(Reestr) then
+           _CONNECT->Transfer_Face(Reestr,%WithUpdate);
+        end;
+    end;
+    Nom_Val:=_CONNECT->Transfer_Value(Nom_Val,1,DoneF);
+    ExecSQL( 'Данные', 'update OD_SHARES SET BIRTHDATE=:P1,COUNT_=:P2,DEATHDATE=:P3,ISNUM=:P4,ISSUER=:P5,MNEM=:P6,MODE=:P7,NOMINAL=:P8,NOM_VAL=:P9,NUM_REG=:P10,ORG_REG=:P11,ISSUENUM=:P12,TYPE_=:P13  where ID=:ID ',
+        BIRTHDATE,COUNT_,DEATHDATE,ISNUM,ISSUER,MNEM,MODE,NOMINAL,NOM_VAL,NUM_REG,ORG_REG,ISSUENUM,TYPE_,ID);
+end;
+
+function 'Update1'  // акция
+do
+var MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE;
+      ExtractSQL( 'ИсходныеДанные', 'select MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE '+
+            'from OD_A_SHARES where SHARE=:share', %Share_id,
+            MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE);
+      ExecSQL( 'Данные','update OD_A_SHARES SET MAXNOMINAL=:P1,MAXSHARE=:P2,MAXVOICE=:P3,VOICECOUNT=:P4,DIVID_TYPE=:P5,DIVID_RATE=:P6 WHERE SHARE=:SHARE',
+               MAXNOMINAL,MAXSHARE,MAXVOICE,VOICECOUNT,DIVID_TYPE,DIVID_RATE,ID);
+end;
+
+function 'Update2' //облигация, сертификат
+do
+var IS_CONV:=0,IS_SAVE:=0,IS_JUNIOR:=0,period,PERCENT_;
+      ExtractSQL( 'ИсходныеДанные', 'select IS_CONV,IS_JUNIOR,IS_SAVE,PERIOD,PERCENT_ '+
+            'from OD_O_SHARES where SHARE=:share', %Share_id, IS_CONV,IS_JUNIOR,IS_SAVE,PERIOD,PERCENT_);
+      ExecSQL( 'Данные','update OD_O_SHARES set IS_CONV=:P1,IS_SAVE=:P2,IS_JUNIOR=:IS_JUNIOR,PERIOD=:P3,PERCENT_=:P4 where SHARE=:SHARE ', IS_CONV,IS_SAVE,IS_JUNIOR,PERIOD,PERCENT_,ID);
+var B_DATE,E_DATE,IS_PAY,SUMMA,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE;
+    ExecSQL( 'Данные','delete from OD_COUPONS where SHARE=:SHARE',ID);
+    for  'ИсходныеДанные' select 'select B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_ from OD_COUPONS where SHARE=:SHARE'
+    from %SHARE_ID
+    into B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_
+    do
+        try
+          ExecSQL( 'Данные','insert into OD_COUPONS (B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,SHARE) '+
+          'values (:B_DATE,:E_DATE,:IS_PAY,:SUMMA,:PERCENT_,:SHARE)',B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,ID);
+        except
+           Dummy
+        end;
+    end;
+
+    ExecSQL( 'Данные','delete from OD_OFFERS where SHARE=:SHARE',ID);
+    for  'ИсходныеДанные' select 'select B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE from OD_OFFERS where SHARE=:SHARE'
+    from %SHARE_ID
+    into B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,ACTUAL_DATE
+    do
+        try
+          ExecSQL( 'Данные','insert into OD_OFFERS (B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,SHARE,ACTUAL_DATE) '+
+          'values (:B_DATE,:E_DATE,:P_DATE,:O_PRICE,:O_TYPE,:SHARE,:ACTUAL_DATE)',B_DATE,E_DATE,P_DATE,O_PRICE,O_TYPE,ID,ACTUAL_DATE);
+        except
+           Dummy
+        end;
+    end;
+
+end;
+
+function 'Update3' //вексель
+do
+var Is_Accept,Is_Pass,BirthPlace,DeathPlace,PERCENT_,P_DATE;
+      ExtractSQL( 'ИсходныеДанные', 'select IS_ACCEPT,IS_PASS,BIRTHPLACE,DEATHPLACE,PERCENT_,P_DATE '+
+            'from OD_V_SHARES where SHARE=:share', %Share_id, Is_Accept,Is_Pass,BirthPlace,DeathPlace,PERCENT_,P_DATE);
+      ExecSQL( 'Данные','update OD_V_SHARES set IS_ACCEPT=:P1,IS_PASS=:P3,BIRTHPLACE=:P4,DEATHPLACE=:P5,PERCENT_=:P6,P_DATE=:P7 WHERE SHARE=:SHARE ', IS_ACCEPT,IS_PASS,BIRTHPLACE,DEATHPLACE,PERCENT_,P_DATE,ID);
+var B_DATE,E_DATE,IS_PAY,SUMMA;
+    for  'ИсходныеДанные' select 'select B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_ from OD_COUPONS where SHARE=:SHARE'
+    from %SHARE_ID
+    into B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_
+    do
+        try
+          ExecSQL( 'Данные','update OD_COUPONS set B_DATE=:P1,E_DATE=:P2,IS_PAY=:P3,SUMMA=:P4,PERCENT_=:P5 where SHARE=:SHARE ',
+          B_DATE,E_DATE,IS_PAY,SUMMA,PERCENT_,ID);
+        except
+           Dummy
+        end;
+    end;
+end;
+
+function 'Update45'
+do
+      var amount,price,valuta,contract,is_vargin,IS_CLEAR;
+      ExtractSQL( 'ИсходныеДанные', 'select AMOUNT,PRICE,VALUTA,CONTRACT,is_vargin,IS_CLEAR '+
+            'from OD_T_SHARES where SHARE=:share', %Share_id, amount,price,valuta,contract,is_vargin,IS_CLEAR);
+      valuta:=_CONNECT->Transfer_Value(valuta,1,DoneF);
+      ExecSQL( 'Данные','update OD_T_SHARES set AMOUNT=:P1,PRICE=:P2,VALUTA=:P3,CONTRACT=:P4,is_vargin=:is_vargin,IS_CLEAR=:IS_CLEAR where SHARE=:SHARE ', amount,price,valuta,contract,is_vargin,IS_CLEAR,ID);
+end;
+
+Done := 0;
+
+WasExist := ExtractSQL('Данные',
+          'select v.ID, s.MNEM, s.NUM_REG, s.ORG_REG, s.COUNT_, s.BIRTHDATE, s.DEATHDATE, s.CLASS, s.TYPE_,'+
+          ' s.MODE, s.ISSUER, s.NOMINAL, s.NOM_VAL, s.ISNUM, s.ISSUENUM, v.B_DATE'+
+          ' from OD_VALUES v'+
+          ' left join  OD_SHARES s on v.ID=s.ID'+
+          ' where v.SYSNAME=:SYSNAME and V_TYPE=2', SYSNAME96,
+          ID, Mnem, Num_Reg, Org_Reg, Count_, BirthDate, DeathDate, Class, Type_, Mode, Issuer, Nominal, Nom_Val, IsNum, ISSUENUM, B_DATE);
+if (%WithUpdate<>2) and not WasExist then //проверка наличия
+   //такой еще нет; будем заводить
+     ID := Gen_ID( 'Данные', 'OD_VALUES_ID_GEN', 1 );
+     ExecSQL( 'Данные', 'insert into OD_VALUES (ID, SYSNAME, ISIN, MFU, NAME, V_TYPE,CFI) VALUES(:ID,:SYSNAME, :ISIN, :MFU, :NAME, 2,:CFI)',
+               ID, SYSNAME96, ISIN96, MFU96, NAME96,CFI96);
+     Insert0;
+      if CLASS96=1 then     Insert1  //акции
+      elsif (CLASS96=2) or (CLASS96=6) then  Insert2  //облигации, сертификат
+      elsif (CLASS96=3) or (CLASS96=8) then  Insert3  //вексель,Коносамент
+      elsif (CLASS96=4) or (CLASS96=5) or (CLASS96=7) or (CLASS96=9) then  Insert45  //опцион,фьючерс,Депозитарная расписка,Варрант
+      elsif (CLASS96=12) then  Insert12 //закладные
+//      elsif CLASS96=10 then  Insert10  //Пай
+//      else
+//           Raise('Обнаружена не акция и не облигация: '+ NAME96)
+      end;
+      Done := 1; //был insert
+elsif (%WithUpdate>0) and WasExist then
+      if (B_DATE96>B_DATE) or (%WithUpdate=2)  then
+         ExecSQL( 'Данные',
+            'update OD_VALUES SET ID=0, ISIN=:ISIN, MFU=:MFU, NAME=:NAME, B_DATE=:B_DATE,CFI=:CFI where ID=:ID',
+            ISIN96, MFU96, NAME96, B_DATE96, CFI96, ID);
+         Update0;
+         if CLASS96=1 then    Update1 //акции
+         elsif (CLASS96=2) or (CLASS96=6) then Update2 //облигации, сертификат
+         elsif (CLASS96=3) or (CLASS96=8) then Update3 //вексель,Коносамент
+         elsif (CLASS96=4) or (CLASS96=5) or (CLASS96=7) or (CLASS96=9) then Update45 //опцион,фьючерс,Депозитарная расписка,Варрант
+         elsif CLASS96=12 then Update12 //закладные
+//         else
+//             Message('Обнаружена не акция и не облигация: '+ NAME96)
+         end;
+         Done := 2; //был update
+      end;
+end;
+if ((%WithUpdate>0) and WasExist) or (Done=1) then //заказывали обновления? давай-ка коды с т.з. торг.систем закачаем не глядя :)
+   var CODER, CODE, LOT_SIZE, CODER_NAME, CODER_MNEM, DIAL_MODE, IsCoder, IsCode, i;
+   for 'ИсходныеДанные' select
+      [select c.CODER, c.CODE, c.LOT_SIZE, f.NAME, f.MNEM
+       from OD_VALUE_CODERS c
+       left join OD_FACES f on f.SELF_ID=c.CODER and f.LAST_FLAG=1
+       where c.SHARE=:S]
+   from %SHARE_ID into CODER, CODE, LOT_SIZE, CODER_NAME, CODER_MNEM
+   do
+      if ListInd(WithoutMarket, CODER_MNEM) >= 0 then continue end; //не рассматриваем
+      i := SelectSQL('Данные', [select f.SELF_ID, max(p.DIAL_MODE) from OD_FACES f left join OD_P_FACES p on p.FACE=f.SELF_ID and p.DIAL_MODE in (5,7)
+                                where f.MNEM=:M and f.LAST_FLAG=1
+                                group by f.SELF_ID],
+                               CODER_MNEM, CODER, DIAL_MODE, dummy);
+      if i <> 1 then CODER := clear(0) end;
+      if IsNull(CODER) then
+         Assert(Question('Коды ценных бумаг с точки зрения '+ CODER_NAME +
+                ' (мнемоника '''+ CODER_MNEM +''') не могут быть реплицированы, т.к. в целевой базе'+
+                iif(i=0, ' не найдено юр.лицо с такой мнемоникой.'+
+                         ' Если код нужен, то пометьте юр.лицо мнемоникой (или введите если нету) и реплицируйте заново.',
+                         ' найдено несколько юр.лиц с такой мнемоникой.'+
+                         ' Если код нужен, то пометьте мнемоникой только одно юр.лицо и реплицируйте заново.')+
+                ' Продолжить репликацию?'),
+                'Не найдено юр.лицо с мнемоникой '+CODER_MNEM);
+         ListAdd(WithoutMarket, CODER_MNEM); //более не рассматриваем этого кодировщика
+      else
+         if IsNull(DIAL_MODE) then
+            warning('У юр.лица '+ CODER_NAME +' (мнемоника '''+ CODER_MNEM +
+                '''), являющегося кодировщиком тикера, в целевой базе данных не установлен один из видов деятельности: ''Организация торговли фондами'' или ''Депозитарная деятельность''.')
+         end;
+         IsCoder := Extract('Данные', [select count(*) from OD_VALUE_CODERS where CODER=:D and SHARE=:S], CODER, ID); //у этой ЦБ уже есть код этого кодировщика
+         if IsCoder and (%WithUpdate > 0) then
+            ExecSQL('Данные', [delete from OD_VALUE_CODERS where CODER=:D and SHARE=:S], CODER, ID);
+            IsCoder := false;
+         end;
+         if not IsCoder then
+            IsCode := Extract('Данные', [select count(*) from OD_VALUE_CODERS where CODER=:D and CODE=:C], CODER, CODE); //в базе уже есть ЦБ с таким кодом
+            if not IsCode then //добавляем в том случае если нет этого кодировщика у этой ЦБ и если нет такого кода в базе
+               ExecSQL('Данные', [insert into OD_VALUE_CODERS (CODER, CODE, LOT_SIZE, SHARE)
+                                  values (:D, :C, :L, :S)], CODER, CODE, LOT_SIZE, ID);
+               if Done=0 then Done:=2 end //поменялся код ЦБ
+            else
+               Assert(Question('Код ценной бумаги '''+ CODE +''' с точки зрения '''+ CODER_NAME +
+                      ''' не может быть реплицирован, т.к. найдена другая ценная бумага с таким кодом. Продолжить репликацию?'),
+                      'Дублирование кода ценной бумаги');
+            end
+         end
+      end
+   end
+end;
+ID

@@ -1,0 +1,56 @@
+{Transfer_Client_Account( %Client_id : integer; %WithUpdate :boolean; Done:int ) :Client_id}
+
+Assert( ~IsBlank(%Client_id) ,'Не задан параметр %Clien_id (счет депо)');
+var NUMBER96, CORR96, FACE96, NAME96, TYPE96, BANK96,DoneF,Prefix,Postfix,IsNotFound,
+      ID, S_TYPE,NAME,ACNT,FACE,BANK,ACNT_CORR;
+ExtractSQL( 'ИсходныеДанные', 'select C.NUMBER, C.FACE, C.NAME, C.TYPE_, R.LINK_NUMBER '+
+   ' from OD_CLIENTS  C '+
+   'left join OD_CLIENTS_REC R on R.CLIENT=C.SELF_ID and R.E_DATE=''01.01.9999'' '+
+   'where  C.ID=:ID', %Client_id,   NUMBER96, FACE96, NAME96, TYPE96, CORR96);
+BANK96:=Extract( 'ИсходныеДанные', 'select WHOS from BASES where BASE_ID=(SELECT OWNER from BASES where BASE_ID=(SELECT BASE_ID from OD_PR_BASE_ID))');
+Assert( ~IsBlank(BANK96) ,'Не задан владелец старшей базы данных (Сервера Удаленного Клиента) во внешней базе данных');
+
+if TYPE96=1 then // Хранитель
+   Prefix:=Copy(NUMBER96,1,8);   Postfix:=Copy(NUMBER96,13,8);
+   BANK:=Extract( 'ИсходныеДанные', 'select WHOS from BASES where CODE=:CODE and BASE_ID<0',Postfix);
+   FACE:=Extract( 'ИсходныеДанные', 'select WHOS from BASES where CODE=:CODE and BASE_ID<0',Prefix);
+   Assert( ~IsBlank(BANK) ,'Во внешней базе (Модуля Удаленного Клиента) не задан владелец узла: '+Postfix);
+   Assert( ~IsBlank(FACE) ,'Во внешней базе (Модуля Удаленного Клиента) не задан владелец узла: '+Prefix);
+   owner->Transfer_Face(BANK,1,DoneF,BANK);
+   owner->Transfer_Face(FACE,1,DoneF,FACE);
+   if IsBlank(CORR96) then
+      CORR96:='б/н '+NUMBER96
+   end;
+else
+   owner->Transfer_Face(BANK96,1,DoneF,BANK);
+   owner->Transfer_Face(FACE96,1,DoneF,FACE);
+   if IsBlank(CORR96) then
+      CORR96:='б/н'
+   end;
+end;
+Done := 0;
+if TYPE96=1 then // Хранитель
+    IsNotFound:=(ExtractSQL( 'Данные', 'select ID, S_TYPE,NAME,ACNT,ACNT_CORR from OD_FACE_ACCS where BANK=:BANK and FACE=:FACE and ACNT_CORR=:ACNT_CORR and A_TYPE=2',
+       BANK,FACE,NUMBER96,  ID, S_TYPE,NAME,ACNT,ACNT_CORR) = 0)
+else
+    IsNotFound:=(ExtractSQL( 'Данные', 'select ID, S_TYPE,NAME,ACNT,ACNT_CORR from OD_FACE_ACCS where BANK=:BANK and FACE=:FACE and ACNT=:ACNT and A_TYPE=2',
+       BANK,FACE,NUMBER96,  ID, S_TYPE,NAME,ACNT,ACNT_CORR) = 0)
+end;
+if (%WithUpdate<>2) and IsNotFound then //проверка наличия счета
+//такого счета еще нет; будем заводить
+  id := Gen_ID( 'Данные', 'OD_FACE_ACCS_id_gen', 1 );
+  if TYPE96=1 then // Хранитель
+        ExecSQL( 'Данные', 'insert into OD_FACE_ACCS ( ID, A_TYPE,S_TYPE,NAME, BANK,FACE,ACNT,ACNT_CORR) values  ( :ID, 2,:S_TYPE,:NAME, :BANK,:FACE,:ACNT,:ACNT_CORR) ',
+         ID, TYPE96,NAME96, BANK,FACE,CORR96,NUMBER96);
+  else
+        ExecSQL( 'Данные', 'insert into OD_FACE_ACCS ( ID, A_TYPE,S_TYPE,NAME, BANK,FACE,ACNT,ACNT_CORR) values  ( :ID, 2,:S_TYPE,:NAME, :BANK,:FACE,:ACNT,:ACNT_CORR) ',
+         ID, TYPE96,NAME96, BANK,FACE,NUMBER96,CORR96);
+   end;
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and ~IsNotFound then
+   if NAME96<>NAME then
+      ExecSQL( 'Данные', 'update OD_FACE_ACCS set NAME=:NAME where ID= :ID', ID);
+      Done := 2; //был update
+   end;
+end;
+ID

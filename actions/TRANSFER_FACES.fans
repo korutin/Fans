@@ -1,0 +1,40 @@
+Assert(IsOpen('_CONNECT'),'Форма доступа к данным не открыта');
+var  done:=0, Replicated:=0, News:=0;
+with 'Данные' do
+  if _CONNECT.PersonLazy.Value='' then
+      StartProgress( 'Репликация данных', 'Субъекты' );
+     var id, cur, all := Extract( 'ИсходныеДанные', 'select count(*) from OD_FACES where LAST_FLAG=1');
+     DoProgress( 0, cur:=0, all );
+     for 'ИсходныеДанные' select 'select SELF_ID from OD_FACES where LAST_FLAG=1 order by NAME'
+        into id
+     do
+        try
+           _CONNECT->Transfer_Face( id,  _CONNECT.RepTypeGroup.ItemIndex,Done );
+           if done > 0 then
+              inc( Replicated );
+              if done = 1 then inc( News ) end
+           end
+        except 
+            if ~Question(EXCEPTION.Text+'  Продолжить транзакцию?') then
+                 Replicated:=0; News:=0;
+                 propagate;
+            end;
+        end;
+        DoProgress( 0, inc( cur ), all )
+     end;
+     DoProgress( 0, all, all );
+  else
+      _CONNECT->Transfer_Face( _CONNECT.PersonLazy.Value,  _CONNECT.RepTypeGroup.ItemIndex,Done );
+       if done > 0 then
+           inc( Replicated );
+           if done = 1 then inc( News ) end
+       end
+  end;
+  MetaRefresh('Данные','OD_FACES');
+  BreakPoint;
+end;
+if Replicated > 0 then
+   Message('Всего изменений: '+Str( Replicated )+' из них добавлено новых: '+Str( News ));
+else
+   Message('Изменений не было')
+end

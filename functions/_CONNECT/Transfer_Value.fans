@@ -1,0 +1,47 @@
+//Transfer_Value( %Value_id : integer; %WithUpdate :int; Done:int )
+
+Assert( ~IsBlank(%Value_id ) ,'Не задан параметр %Value_id  (валюта)');
+var SysName96,NAME96,ISIN96,MFU96,B_DATE96,IS_IN96,V_TYPE96,BASE_VAL96,BASE_SYS96,
+    IsNotFound,q,
+    ID,NAME,B_DATE,BASE_VAL:=clear(0);
+
+ExtractSQL( 'ИсходныеДанные', 'select SYSNAME,NAME,ISIN,MFU,B_DATE,IS_IN,V_TYPE,BASE_VAL '+
+   'from OD_VALUES where ID=:ID', %Value_id,SysName96,NAME96,ISIN96,MFU96,B_DATE96,IS_IN96,V_TYPE96,BASE_VAL96);
+
+Done := 0;
+
+IsNotFound:=(ExtractSQL( 'Данные', 'select ID,NAME from OD_VALUES where V_TYPE=:V_TYPE and SYSNAME=:NAME ',
+       V_TYPE96,SYSNAME96,  ID,NAME) = 0);
+if V_TYPE96=2 then
+  ID:=owner->Transfer_Share( %Value_id, %WithUpdate, Done )
+elsif V_TYPE96<>1 and V_TYPE96<>4 then 
+  Raise('Не найдено имущество с кодом: '+SYSNAME96);
+elsif (%WithUpdate<>2) and IsNotFound then //проверка наличия цепочки
+//такой валюты нет; будем заводить
+  if ~IsNull(BASE_VAL96) then
+     BASE_SYS96:=Extract( 'ИсходныеДанные', 'select SYSNAME from OD_VALUES where  ID=:ID ',BASE_VAL96);
+     BASE_VAL:=Extract( 'Данные', 'select ID from OD_VALUES where SYSNAME=:SYSNAME',BASE_SYS96);
+     if IsNull(BASE_VAL) then
+         BASE_VAL:=owner->Transfer_Value( BASE_VAL96, %WithUpdate, Done )
+     end;
+  end;
+  ID := Gen_ID( 'Данные', 'OD_VALUES_id_gen', 1 );
+  ExecSQL( 'Данные', 'insert into OD_VALUES ( ID,  SYSNAME,NAME,ISIN,MFU,B_DATE,V_TYPE,BASE_VAL) values  ( :ID, :SysName,:NAME,:ISIN,:MFU,:B_DATE,1,:BASE_VAL) ',
+         ID, SysName96,NAME96,ISIN96,MFU96,B_DATE96,BASE_VAL);
+  if ~IsNull(BASE_VAL) then
+     for 'ИсходныеДанные' select 'select B_DATE,E_DATE,SHIFT,ADD_PER,MIN_SUM,MAX_SUM from OD_UNITS where VAL = :VAL ORDER BY B_DATE'
+     from %Value_id
+     using q  do
+        ExecSQL( 'Данные', 'insert into OD_UNITS ( VAL,B_DATE,E_DATE,SHIFT,ADD_PER,MIN_SUM,MAX_SUM) values  (:VAL,:B_DATE,:E_DATE,:SHIFT,:ADD_PER,:MIN_SUM,:MAX_SUM) ',
+            ID, q._B_DATE,q._E_DATE,q._SHIFT,q._ADD_PER,q._MIN_SUM,q._MAX_SUM);
+     end 
+  end;
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and ~IsNotFound then
+    if (B_DATE96>B_DATE) or (%WithUpdate=2)  then
+       ExecSQL( 'Данные', 'update OD_VALUES set NAME=:NAME,ISIN=:ISIN,MFU=:MFU,B_DATE=:B_DATE  where ID= :ID',
+         NAME96,ISIN96,MFU96,B_DATE96, ID);
+        Done := 2; //был update
+    end
+end;
+ID

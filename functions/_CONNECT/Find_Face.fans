@@ -1,0 +1,38 @@
+//Find_Face( %SELF_ID :str; B_DATE :date ) :SELF_ID
+var counter,new_S_TYPE, new_NAME, new_INN, new_DOC_TYPE, new_DOC_SER, new_DOC_NUM, IsFound, SELF_ID;
+
+ExtractSQL( 'ИсходныеДанные',
+   [select S_TYPE, NAME, INN, DOC_TYPE, DOC_SER, DOC_NUM from OD_FACES where SELF_ID=:ID and LAST_FLAG=1], %SELF_ID,
+   new_S_TYPE, new_NAME, new_INN, new_DOC_TYPE, new_DOC_SER, new_DOC_NUM);
+
+//поиск по имени
+counter:= SelectSQL('Данные', [select SELF_ID, B_DATE from OD_FACES where S_TYPE=:S_TYPE and NAME=:NAME and LAST_FLAG=1],
+            new_S_TYPE, new_NAME, SELF_ID, B_DATE, dummy);
+
+IsFound := counter>=1; // нашли одно или несколько
+if counter=0 then
+   IsFound:=FALSE;
+elsif IsFound then
+   if ~IsBlank(new_INN) then //не нашли или их здесь много
+     //по ИНН возможен поиск и для юриков и для физиков
+     counter := SelectSQL('Данные',
+                 [select SELF_ID, B_DATE from OD_FACES where S_TYPE=:S_TYPE and NAME=:NAME and INN=:INN and LAST_FLAG=1],
+                  new_S_TYPE, new_NAME, new_INN, SELF_ID, B_DATE, dummy);
+     IsFound := (counter=1);
+
+   end;
+   if not IsFound and ~IsBlank(new_DOC_TYPE) then //не нашли или их здесь много
+      //поискать по документу
+      IsFound := (SelectSQL('Данные',
+                  [select SELF_ID, B_DATE from OD_FACES where S_TYPE=0 and DOC_TYPE=:DOC_TYPE and (DOC_SER=:DOC_SER or DOC_SER is NULL) and DOC_NUM=:DOC_NUM and LAST_FLAG=1],
+                   new_S_TYPE, new_DOC_TYPE, new_DOC_SER, new_DOC_NUM, SELF_ID, B_DATE, dummy) = 1);
+
+   end
+end;
+
+if IsFound then
+   return(SELF_ID)
+else
+   B_DATE := clear(now);
+   return(clear(0))
+end

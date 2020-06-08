@@ -1,0 +1,3 @@
+var Ver1 := Extract('ИсходныеДанные', [select DATA_VERSION from OD_PR_BASE_ID]),
+     Ver2 := Extract('Данные', [select DATA_VERSION from OD_PR_BASE_ID]);
+_f_in_mess->IsTailCompatible(Ver1, Ver2)

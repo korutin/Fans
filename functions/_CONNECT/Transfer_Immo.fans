@@ -1,0 +1,69 @@
+//Transfer_Immo( %Immo_id : integer; %WithUpdate :boolean; Done:int;)
+//%WithUpdate использование параметра не ясно для чего...
+//Переменные начинающиеся на I_ получены из исходных таблиц (ИсходныеДанные)
+//                           O_ в случае надобности конвертированы в значения БД назначения (Данные)
+
+Assert( ~IsBlank(%Immo_id) ,'Не задан параметр %Immo_id');
+var WasExist, DoneF;
+var I_LEV, I_OWNER, I_OWNER_NAME, O_OWNER_ID, I_OWNER_ID, I_SYSNAME, I_NAME, I_T_NAME, I_MFU, I_IS_IN, I_FIRSTCOST, I_VAL, I_CLASS, I_I_TYPE, I_I_SUBTYPE, I_SUB_COMMENT,
+    I_ADDRESS, I_STATE, I_IS_ZALOG, I_CADASTRE, I_NALOG_TYPE, I_A_TYPE, I_A_PERIOD, I_IN_DATE, I_STAVKA, I_OKATO, I_NUMER, I_DENOM, I_KLADR, I_I_AREA,
+    I_D_NUM, I_D_DATE, I_END_DATE, I_FACE_REF, I_IMMO_REF, I_ORGAN, I_NALOG_CODE, I_B_DATE, I_E_DATE, ID;
+
+//Разбираемся с OWNER
+ExtractSQL( 'ИсходныеДанные', [select T.OWNER_, T.NAME from OD_IMMO_TREE T where T.VALUE_ID=:tvid], %Immo_id, I_OWNER, I_T_NAME);
+ExtractSQL( 'ИсходныеДанные', [select T.NAME, T.LEV_ from OD_IMMO_TREE T where T.ID=:tvid], I_OWNER, I_OWNER_NAME, I_LEV);
+
+
+ExtractSQL( 'Данные', [select ID from OD_IMMO_TREE where LEV_=:lev and f_upper(NAME)=:n], I_LEV, UpperCase(I_OWNER_NAME), O_OWNER_ID);
+if isBlank(O_OWNER_ID) then 
+   O_OWNER_ID := Gen_ID( 'Данные', 'OD_IMMO_TREE_ID_GEN', 1 );
+   ExecProc( 'OD_IMMO_TREE_INSERT', 'Данные', O_OWNER_ID, 0, I_OWNER_NAME, null);
+end;
+
+ExtractSQL( 'ИсходныеДанные', [select SYSNAME, NAME, MFU, IS_IN from OD_VALUES where ID=:ID], %Immo_id, I_SYSNAME, I_NAME, I_MFU, I_IS_IN);
+ExtractSQL( 'ИсходныеДанные', [select FIRSTCOST, VAL, CLASS, I_TYPE, I_SUBTYPE, SUB_COMMENT, ADDRESS, STATE, IS_ZALOG, CADASTRE, NALOG_TYPE,A_TYPE, A_PERIOD, IN_DATE,
+                                      STAVKA, OKATO, NUMER, DENOM, KLADR, I_AREA, D_NUM, D_DATE, END_DATE, FACE_REF, IMMO_REF, ORGAN, NALOG_CODE, B_DATE, E_DATE 
+                               from OD_IMMOVABLES where SELF_ID=:ID and E_DATE='01.01.9999'], %Immo_id, 
+            I_FIRSTCOST, I_VAL, I_CLASS, I_I_TYPE, I_I_SUBTYPE, I_SUB_COMMENT, I_ADDRESS, I_STATE, I_IS_ZALOG, I_CADASTRE, I_NALOG_TYPE,I_A_TYPE, I_A_PERIOD, I_IN_DATE,
+            I_STAVKA, I_OKATO, I_NUMER, I_DENOM, I_KLADR, I_I_AREA, I_D_NUM, I_D_DATE, I_END_DATE, I_FACE_REF, I_IMMO_REF, I_ORGAN, I_NALOG_CODE, I_B_DATE, I_E_DATE);
+if ~IsBlank(I_VAL) then 
+   I_VAL:=_CONNECT->Transfer_Value(I_VAL,1,DoneF);
+end;
+
+if ~IsBlank(I_ORGAN) then
+   I_ORGAN:=_CONNECT->Transfer_Face(I_ORGAN,1,DoneF,I_ORGAN);
+end;
+
+
+Done := 0;
+
+WasExist := ExtractSQL('Данные', [select ID from OD_VALUES where V_TYPE=3 and SYSNAME=:SYSNAME], I_SYSNAME, ID);
+
+if (%WithUpdate<>2) and not WasExist then //проверка наличия
+   ID := Gen_ID( 'Данные', 'OD_VALUES_ID_GEN', 1 );
+   ExecSQL( 'Данные', [INSERT INTO OD_VALUES ( ID,  SYSNAME,  NAME,  V_TYPE,  MFU,  IS_IN)
+                                       VALUES(:ID, :SYSNAME, :NAME,       3, :MFU, :IS_IN)], 
+                                               ID,I_SYSNAME,I_NAME,         I_MFU,I_IS_IN);
+
+   ExecSQL( 'Данные', [INSERT INTO OD_IMMOVABLES( FIRSTCOST, SELF_ID, VAL, CLASS, I_TYPE, I_SUBTYPE, SUB_COMMENT, ADDRESS, STATE, IS_ZALOG, CADASTRE, NALOG_TYPE, A_TYPE, A_PERIOD, IN_DATE,
+                                                  STAVKA, OKATO, NUMER, DENOM, KLADR, I_AREA, D_NUM, D_DATE, END_DATE, FACE_REF, IMMO_REF, ORGAN, NALOG_CODE, B_DATE, E_DATE )
+                       VALUES ( :FIRSTCOST, :SELF_ID, :VAL, :CLASS, :I_TYPE, :I_SUBTYPE, :SUB_COMMENT, :ADDRESS, :STATE, :IS_ZALOG, :CADASTRE, :NALOG_TYPE, :A_TYPE, :A_PERIOD, :IN_DATE,
+                                :STAVKA, :OKATO, :NUMER, :DENOM, :KLADR, :I_AREA, :D_NUM, :D_DATE, :END_DATE, :FACE_REF, :IMMO_REF, :ORGAN, :NALOG_CODE, :B_DATE, :E_DATE)],
+                               I_FIRSTCOST, ID,      I_VAL,I_CLASS,I_I_TYPE,I_I_SUBTYPE,I_SUB_COMMENT,I_ADDRESS,I_STATE,I_IS_ZALOG,I_CADASTRE,I_NALOG_TYPE,I_A_TYPE,I_A_PERIOD,I_IN_DATE,
+                               I_STAVKA,I_OKATO,I_NUMER,I_DENOM,I_KLADR,I_I_AREA,I_D_NUM,I_D_DATE,I_END_DATE,I_FACE_REF,I_IMMO_REF,I_ORGAN,I_NALOG_CODE,I_B_DATE,I_E_DATE);
+   
+   ExecProc( 'OD_IMMO_TREE_INSERT', 'Данные', null, O_OWNER_ID, I_T_NAME, ID);
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and WasExist then
+   ExecSQL( 'Данные', [update OD_VALUES set NAME=:NAME, SYSNAME=:SYSNAME, MFU=:MFU where ID=:ID], I_NAME, I_SYSNAME, I_MFU, ID);
+   ExecSQL( 'Данные', [update OD_IMMOVABLES set FIRSTCOST=:FIRSTCOST, VAL=:VAL, CLASS=:CLASS, I_TYPE=:I_TYPE, I_SUBTYPE=:I_SUBTYPE, SUB_COMMENT=:SUB_COMMENT, ADDRESS=:ADDRESS, STATE=:STATE,
+                                                IS_ZALOG=:IS_ZALOG, CADASTRE=:CADASTRE, NALOG_TYPE=:NALOG_TYPE, A_TYPE=:A_TYPE, A_PERIOD=:A_PERIOD, IN_DATE=:IN_DATE, STAVKA=:STAVKA, OKATO=:OKATO, NUMER=:NUMER,
+                                                DENOM=:DENOM, KLADR=:KLADR, I_AREA=:I_AREA, D_NUM=:D_NUM, D_DATE=:D_DATE, END_DATE=:END_DATE, FACE_REF=:FACE_REF, IMMO_REF=:IMMO_REF, ORGAN=:ORGAN,
+                                                NALOG_CODE=:NALOG_CODE, B_DATE=:B_DATE, E_DATE=:E_DATE
+                       where SELF_ID=:ID], I_FIRSTCOST, I_VAL,I_CLASS,I_I_TYPE,I_I_SUBTYPE,I_SUB_COMMENT,I_ADDRESS,I_STATE,I_IS_ZALOG,I_CADASTRE,I_NALOG_TYPE,I_A_TYPE,I_A_PERIOD,I_IN_DATE,
+                                      I_STAVKA,I_OKATO,I_NUMER,I_DENOM,I_KLADR,I_I_AREA,I_D_NUM,I_D_DATE,I_END_DATE,I_FACE_REF,I_IMMO_REF,I_ORGAN,I_NALOG_CODE,I_B_DATE,I_E_DATE, 
+                                      ID);
+   Done := 2; //был update
+end;
+
+ID

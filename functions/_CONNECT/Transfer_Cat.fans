@@ -1,0 +1,18 @@
+{Transfer_Cat( %d_cat : integer )}
+
+Assert( ~IsBlank(%d_cat ) ,'Не задан параметр %d_cat  (категория документа)');
+var LEV,NAME,SYS_NAME,PROFILE,
+      ID;
+
+ExtractSQL( 'ИсходныеДанные', 'select LEV,NAME,SYS_NAME,PROFILE from OD_DOC_CATS where  ID=:ID', %d_cat, LEV,NAME,SYS_NAME,PROFILE);
+
+if IsNull(SYS_NAME) then
+  ID:=Extract( 'Данные', 'select ID from OD_DOC_CATS where LEV=:LEV and NAME=:NAME and PROFILE=:PROFILE ', LEV,NAME,PROFILE);
+else
+  ID:=Extract( 'Данные', 'select ID from OD_DOC_CATS where LEV=:LEV and NAME=:NAME and SYS_NAME=:SYS_NAME and PROFILE=:PROFILE ', LEV,NAME,SYS_NAME,PROFILE);
+end;
+if IsBlank(ID) then 
+   Raise('Не найдена категория документов "'+NAME+'"') 
+end;
+
+ID

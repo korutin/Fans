@@ -1,0 +1,35 @@
+{Transfer_Chain( %Chain_id : integer; %WithUpdate :int; Done:int )}
+
+Assert( ~IsBlank(%Chain_id ) ,'Не задан параметр %Chain_id  (цепочка)');
+var C_TYPE96,NAME96,FROM_FACE96,TO_FACE96,
+    DoneF,Prefix,Postfix,IsNotFound,
+    ID, S_TYPE,NAME,TO_FACE:=Clear(0),FROM_FACE:=Clear(0);
+
+ExtractSQL( 'ИсходныеДанные', 'select C_TYPE,NAME,FROM_FACE,TO_FACE '+
+   'from OD_CHAINS '+
+   'where  ID=:ID', %Chain_id,C_TYPE96,NAME96,FROM_FACE96,TO_FACE96);
+
+if ~IsNull(FROM_FACE96) then
+   owner->Transfer_Face(FROM_FACE96,1,DoneF,FROM_FACE);
+end;
+if ~IsNull(TO_FACE96) then
+   owner->Transfer_Face(TO_FACE96,1,DoneF,TO_FACE);
+end;
+
+Done := 0;
+
+IsNotFound:=(ExtractSQL( 'Данные', 'select ID,NAME from OD_CHAINS where NAME=:NAME and C_TYPE=:C_TYPE ',
+       NAME96,C_TYPE96,  ID,NAME) = 0);
+
+if (%WithUpdate<>2) and IsNotFound then //проверка наличия цепочки
+//такого счета еще нет; будем заводить
+  id := Gen_ID( 'Данные', 'OD_CHAINS_id_gen', 1 );
+  ExecSQL( 'Данные', 'insert into OD_CHAINS ( ID, C_TYPE,NAME,FROM_FACE,TO_FACE) values  ( :ID, :C_TYPE,:NAME,:FF,:TF) ',
+         ID, C_TYPE96,NAME96,FROM_FACE,TO_FACE);
+   Done := 1; //был insert
+elsif (%WithUpdate>0) and ~IsNotFound then
+      ExecSQL( 'Данные', 'update OD_CHAINS set FROM_FACE=:FF,TO_FACE=:TF  where ID= :ID',
+        FROM_FACE,TO_FACE, ID);
+      Done := 2; //был update
+end;
+ID

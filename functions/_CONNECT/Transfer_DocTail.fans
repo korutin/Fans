@@ -1,0 +1,47 @@
+{Transfer_DocTail(%NEW_ID:Int; %OLD_ID:Int; %ADD_TABLE:Str; %WithUpdate,Done)}
+function  'DO_D_CLISER_ZA_SP(%WithUpdate,Done)' do
+var i,
+    AMOUNT, CLIENT, D1_DATE, D1_NUM, D2_DATE, D2_NUM, DOC, G_CLASS,
+    G_DATE, G_NUM, G_SUM, G_VAL, IS_K, KD_DAT, KD_NUM, KD_PLACE,
+    KD_SER, KD_TYPE, K_NAME, K_RACC, K_TYPE, LINE, M_DATE, OPE_TYPE,
+    PRICE, SHARE, U_DATE, U_NUM, S_DATE, IS_BLOCK,BLANK,U_CLASS,INSTR_NUM,MARKET;
+
+    i:=SelectSQL('ИсходныеДанные','select AMOUNT, CLIENT, D1_DATE, D1_NUM, D2_DATE, D2_NUM, DOC, G_CLASS,'+
+      'G_DATE, G_NUM, G_SUM, G_VAL, IS_K, KD_DAT, KD_NUM, KD_PLACE,'+
+      'KD_SER, KD_TYPE, K_NAME, K_RACC, K_TYPE, LINE, M_DATE, OPE_TYPE,'+
+      'PRICE, SHARE, U_DATE, U_NUM, S_DATE, IS_BLOCK,BLANK,U_CLASS,INSTR_NUM,MARKET '+
+      'from D_CLISER_ZA_SP where DOC=:DOC',%OLD_ID,
+
+      AMOUNT, CLIENT, D1_DATE, D1_NUM, D2_DATE, D2_NUM, DOC, G_CLASS,
+      G_DATE, G_NUM, G_SUM, G_VAL, IS_K, KD_DAT, KD_NUM, KD_PLACE,
+      KD_SER, KD_TYPE, K_NAME, K_RACC, K_TYPE, LINE, M_DATE, OPE_TYPE,
+      PRICE, SHARE, U_DATE, U_NUM, S_DATE, IS_BLOCK,BLANK,U_CLASS,INSTR_NUM,MARKET, Dummy);
+
+    if ~IsBlank(CLIENT) then CLIENT:=Transfer_Depo(CLIENT,%WithUpdate,Done) end;
+    if ~IsBlank(LINE) then LINE:=Transfer_Depo(LINE,%WithUpdate,Done) end;
+    if ~IsBlank(SHARE) then SHARE:=Transfer_Share(SHARE,%WithUpdate,Done) end;
+    if ~IsBlank(MARKET) then Transfer_Face(SHARE,%WithUpdate,Done,MARKET) end;
+
+    if I<>0 then
+      ExecSQL('Данные',[insert into D_CLISER_ZA_SP 
+        (AMOUNT, CLIENT, D1_DATE, D1_NUM, D2_DATE, D2_NUM, DOC, G_CLASS,
+        G_DATE, G_NUM, G_SUM, G_VAL, IS_K, KD_DAT, KD_NUM, KD_PLACE,
+        KD_SER, KD_TYPE, K_NAME, K_RACC, K_TYPE, LINE, M_DATE, OPE_TYPE,
+        PRICE, SHARE, U_DATE, U_NUM, S_DATE, IS_BLOCK,BLANK,U_CLASS,INSTR_NUM,MARKET)
+        values
+        (:AMOUNT, :CLIENT, :D1_DATE, :D1_NUM, :D2_DATE, :D2_NUM, :DOC, :G_CLASS,
+        :G_DATE, :G_NUM, :G_SUM, :G_VAL, :IS_K, :KD_DAT, :KD_NUM, :KD_PLACE,
+        :KD_SER, :KD_TYPE, :K_NAME, :K_RACC, :K_TYPE, :LINE, :M_DATE, :OPE_TYPE,
+        :PRICE, :SHARE, :U_DATE, :U_NUM, :S_DATE, :IS_BLOCK,:BLANK,:U_CLASS,:INSTR_NUM,:MARKET)],
+
+        AMOUNT, CLIENT, D1_DATE, D1_NUM, D2_DATE, D2_NUM, %NEW_ID, G_CLASS,
+        G_DATE, G_NUM, G_SUM, G_VAL, IS_K, KD_DAT, KD_NUM, KD_PLACE,
+        KD_SER, KD_TYPE, K_NAME, K_RACC, K_TYPE, LINE, M_DATE, OPE_TYPE,
+        PRICE, SHARE, U_DATE, U_NUM, S_DATE, IS_BLOCK,BLANK,U_CLASS,INSTR_NUM,MARKET
+      );
+    end;
+end;
+//main body
+if %ADD_TABLE='D_CLISER_ZA_SP' then
+   DO_D_CLISER_ZA_SP(%WithUpdate,Done)
+end;
