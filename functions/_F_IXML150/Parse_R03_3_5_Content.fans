@@ -1,0 +1,874 @@
+// Parse_R03_3_5_Content(%ds:int; %I_SYSNAME:str; %mute, %LoLog :int; SYS_NAME, PARAM , PASS_KIND , D_DATE, NUM, CLIENT, CAGENT, PARTY_TYPE, FROM_FACE, SHARE, LINE, CLINE, G_TEXT, AMOUNT, G_SUM, G_VAL, G_CLASS, G_NUM, G_DATE, 
+// S_DATE, M_DATE, D1_DATE, D1_NUM, D2_DATE, D2_NUM, DebugLog);
+// 
+// Обобщенная для разбора поручений R03-3 и R03-5 функция.
+// Принимает на вход дискриптор на xml датасет и наименование типа xml документа. 
+// Возвращает на параметрах реквизиты для полей формы поручения в понятиях Фанси
+// EKS 3.2019
+// Каждому исследуемому элементу/тэгу XML-инстанса соответствует переменная начинающаяся на x_ . Все такие переменные инициализированы нулловым значением.
+// Значения реквизитов депозитарного поручения могут зависеть от нескольких элементов XML-инстанса, поэтому сначала вынимаем все необходимые значения тэгов/элементов.
+// Потом занимаемся их анализом.
+
+var SenderDocNum, SenderDocDate, ErrList, BErrList;
+var x_main, x_account_dtls, x_account_holder, x_settlement_depository, x_payment_terms, x_autorised_person, x_transaction, x_data_storag,
+    x_state_reg_num, x_contragent, x_account_section_id, x_depositor_transmit_inf, x_depositor_account_dtls, x_depositor_receiv_inf, x_account_dtls_new,
+    x_depositor_receiv_account_dtls, x_account_section_dtls, x_data_storag_new;
+// Всяческие рабочие/временные переменные
+var kind, Info_cr := '', Info_w := '', ContrCount, 
+    cc, _rstroka_1, _rstroka_2, account_section, Account, Account_cag, cc2, account_section_pt, account_pt;
+// Переменные ассоциированные с элементами xml документа    
+var account_IDs, account_type, account_name, payment_term_type_code_1, narrative_1,
+    account_new_IDs, account_new_type, account_new_name, 
+    v_depositor_account_IDs, v_depositor_account_type, v_depositor_account_name,
+    payment_term_type_code, narrative, Info, holder_IDs, mess, authorised_person_type, bases_of_powers, s_type, 
+    v_autorised_person_ids, v_autorised_person_s_type, v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI,
+    v_AccH_ids, v_account_section_depo_id, account_holder_party_name, v_account_depo_id, v_data_storag_party_name, ds_account_section_storage_ids, ds_account_storage_ids, v_account_section_name,
+    v_new_account_depo_id, v_new_account_section_depo_id, v_data_storag_new_party_name, dsnw_account_storage_ids, dsnw_account_section_storage_ids,
+    v_depositor_receiv_account_id, v_account_section_IDs, v_depositor_transmit_account,
+    v_add_info, v_AMOUNT, v_ccy_code, v_ccy_amount, v_based_info, v_bi_other, v_doc_type, v_doc_type_code,
+    v_contr_stype, v_contr_full_name, v_contr_inn, v_contr_birthdate, v_contr_place_of_birth, v_contr_doc_type, v_contr_doc_type_xml, v_contr_doc_ser, v_contr_doc_num, v_contr_doc_dat, v_contr_DOC_PLACE, v_contr_OGRN, v_contr_OGRN_PLACE, v_contr_OGRN_DATE,
+    v_contr_stype_2, v_contr_full_name_2, v_contr_inn_2, v_contr_birthdate_2, v_contr_place_of_birth_2, v_contr_doc_type_2, v_contr_doc_type_xml_2, v_contr_doc_ser_2, v_contr_doc_num_2, v_contr_doc_dat_2, v_contr_DOC_PLACE_2, 
+    v_contr_OGRN_2, v_contr_OGRN_PLACE_2, v_contr_OGRN_DATE_2, v_contr_nationality, v_contr_nationality_2,
+    v_sd_ndc, v_sd_type, v_sd_id, v_section, 
+    v_name_settlement_place_dep, v_sd_other, v_sd_other_type, v_section_dep, 
+    v_name_settlement_place_reg, v_acc_other, v_acc_other_type, v_nmnl_depo_acc, v_nmnl_depo_acc_type, v_nmnl_nmnl_depo2_name, v_nmnl_nmnl_depo2_acc;
+    
+var NewDocId;
+
+var STable  := Table (Rekviz str, critic bool, Info Str, type str, v_str str, v_int int, v_float float);
+//var %LoLog   := Table (Rekviz str, tags_descr str, tags str, critic int, Info Str, type str);
+var AccPlan := Extract('Данные', [select ID from OD_ACC_PLANS where WHOS=:WH and SYS_NAME='DEPO_BANK'], MyFace);
+// ===== Реквизиты поручения ======
+SYS_NAME  := '';
+PARAM     := '';
+PASS_KIND := 8;
+D_DATE    := date('31.12.1899');
+NUM       := clear('');
+CLIENT    := clear(0);
+CAGENT    := clear(0);
+PARTY_TYPE:= clear(0);
+FROM_FACE := clear(0);
+SHARE     := clear(0);
+LINE      := clear(0);
+CLINE     := clear(0); 
+G_TEXT    := List();
+AMOUNT    := clear(0.0);
+G_SUM     := clear(0.0);
+G_VAL     := clear(0);
+G_CLASS   := clear('');
+G_NUM     := clear(''); 
+G_DATE    := date('31.12.1899');
+S_DATE    := date('31.12.1899');
+M_DATE    := date('31.12.1899');
+D1_DATE   := date('31.12.1899');
+D1_NUM    := clear(''); 
+D2_DATE   := date('31.12.1899');
+D2_NUM    := clear('');
+    
+// сегмент переменных заполняемых из XML документа;
+x_autorised_person       := null;
+x_transaction            := null;
+x_state_reg_num          := null;
+x_data_storag            := null;
+x_account_section_id     := null;
+x_depositor_transmit_inf := null;
+x_depositor_account_dtls := null;
+x_account_dtls_new       := null;
+
+authorised_person_type      := null;
+payment_term_type_code      := ''; 
+narrative                   := ''; 
+payment_term_type_code_1    := ''; 
+narrative_1                 := '';
+v_autorised_person_s_type   := null;
+v_security_code             := List(); 
+v_proprietary_security_code := List();
+v_NumReg                    := ''; 
+v_ISIN                      := '';
+v_CFI                       := '';
+v_account_depo_id           := '';
+v_account_section_depo_id   := '';
+v_account_section_name      := '';
+v_data_storag_party_name    := '';
+v_add_info                  := '';
+v_AMOUNT                    := null;
+v_based_info                := List();
+v_bi_other                  := List();
+v_doc_type                  := '';
+v_doc_type_code             := '';
+//data_storag_party_ids       := List():=
+v_contr_stype := v_contr_stype_2               := null;
+v_contr_full_name := v_contr_full_name_2       := '';
+v_contr_nationality := v_contr_nationality_2   := '';
+v_contr_doc_type := v_contr_doc_type_2         := 0;
+v_contr_doc_type_xml := v_contr_doc_type_xml_2 := '';
+v_contr_doc_ser  := v_contr_doc_ser_2          := '';
+v_contr_doc_num := v_contr_doc_num_2           := '';
+v_contr_doc_dat := v_contr_doc_dat_2           := clear(date('31.12.1899'));
+v_contr_DOC_PLACE := v_contr_DOC_PLACE_2       := '';
+v_contr_OGRN := v_contr_OGRN_2                 := '';
+v_contr_OGRN_PLACE := v_contr_OGRN_PLACE_2     := '';
+v_contr_OGRN_DATE := v_contr_OGRN_DATE_2       := clear(date('31.12.1899'));
+v_sd_ndc                       := List();
+v_sd_type                      := '';
+v_sd_id                        := List(); 
+v_section                      := List(); 
+v_name_settlement_place_dep    := '';
+v_sd_other                     := List();
+v_sd_other_type                := '';
+v_section_dep                  := List();
+v_name_settlement_place_reg    := '';
+v_acc_other                    := '';
+v_acc_other_type               := '';
+v_nmnl_depo_acc                := ''; 
+v_nmnl_depo_acc_type           := ''; 
+v_nmnl_nmnl_depo2_name         := '';
+v_nmnl_nmnl_depo2_acc          := '';
+
+v_account_section_IDs          := List();
+v_depositor_account_IDs        := List();
+v_depositor_account_type       := '';
+v_depositor_account_name       := '';
+v_depositor_transmit_account   := '';
+
+ds_account_storage_ids         := List();
+ds_account_section_storage_ids := List();
+DebugLog                       := List();
+TableInsert(STable, List('Rekviz=CLIENT', 'critic=1', 'info=', 'type=int', 'v_str=', 'v_int=', 'v_float='));
+
+function '_ValidContent(%content):bool' do
+var u, sym;
+    u := 0;
+    While u<length(%content) do
+        sym := copy(%content, u, 1);
+        if (sym>='A' and sym<='Z') or //ABCDEFGHIJKLMNOPQRSTUVWXYZ
+           (sym>='a' and sym<='b') or //abcdefghijklmnopqrstuvwxyz
+           (sym>='0' and sym<='9') or
+            sym=':' or sym='.' or sym=',' or sym='-' or sym='(' or sym=')' or sym='+' or sym=':' or sym='?' then  //.,-()+:?
+                inc(u); 
+        else
+            return(false)
+        end;        
+    End;
+    return(true);
+end;
+
+BErrList := '';
+
+x_main := %ds;
+// Разбираем шапку
+//x_header := _Metal_F->XML_FindField(x_main, 'header');
+//_F_IXML150->Inp_out_doc(x_header, SenderDocNum, SenderDocDate);
+
+// ==========================================================
+//                      --- issuer ---
+//
+// 30.01.2019 issuer - элемент по с непонятной судьбой, как пятая нога. эмитента мы можем достать из бумаги (security)
+// пока вычислять не будем
+
+// =====================================================================================================================================
+//  Достаем контент/содержимое тэгов и отражаем их на переменные. Искать субъекты системы и вычислять реквизиты Fansy документа будем
+//  отдельно
+
+// ==========================================================
+//            --- depositor_transmit_inf --
+// ==========================================================
+
+if x_main.?depositor_transmit_inf then
+    x_depositor_transmit_inf := x_main._depositor_transmit_inf;
+    if (x_depositor_transmit_inf.?account_dtls) then
+        x_depositor_account_dtls := x_depositor_transmit_inf._account_dtls;        
+        _F_IXML150->Inp_account_dtls(x_depositor_account_dtls, v_depositor_account_IDs, v_depositor_account_type, v_depositor_account_name);
+        // GetAccountID(account_IDs);
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент depositor_transmit_inf\account_dtls'); 
+    end;        
+else 
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент depositor_transmit_inf.');
+end;
+
+
+// ==========================================================
+//                    --- account_dtls ---
+// ==========================================================
+
+if x_main.?account_dtls then
+    x_account_dtls := x_main._account_dtls;
+    _F_IXML150->Inp_account_dtls(x_account_dtls, account_IDs, account_type, account_name);
+    // GetAccountID(account_IDs);
+else 
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует элемент account_dtls. Счет для поручения не может быть установлен.');
+    TableUpdate(STable, List('info='+'Отсутствует элемент account_dtls. Счет для поручения не может быть установлен.'));
+end;
+
+// ==============================================================================
+//                --- depositor_receiv_inf ---
+//                                  only just for: INSTRUCTION_TO_DEPO_TRANSLATION 
+// ==============================================================================
+// Мы устали и здесь будем исходить из того что файл ранее проверен на соответствие XSD и если каки-то тэгов 
+// не оказалось в наличии это будет выявлено на более ранних этапах
+account_new_IDs  := List();
+account_new_type := '';
+account_new_name := '';
+v_depositor_receiv_account_id  := '';
+if %I_SYSNAME='INSTRUCTION_TO_DEPO_TRANSLATION' then
+    x_depositor_receiv_inf           := x_main._depositor_receiv_inf;
+    x_depositor_receiv_account_dtls  := x_depositor_receiv_inf._account_dtls;
+    v_depositor_receiv_account_id    := x_depositor_receiv_account_dtls._account_id;
+elsif (%I_SYSNAME='INSTRUCTION_TO_DEPO_TRADING_TRANSFER') then
+    x_account_dtls_new := x_main._account_dtls_new;
+    _F_IXML150->Inp_account_dtls(x_account_dtls_new, account_new_IDs, account_new_type, account_new_name);
+end;
+
+// ==========================================================
+//                  --- account_holder ---
+// ==========================================================
+if x_main.?account_holder then
+    x_account_holder := x_main._account_holder;
+    //_F_IXML150->Inp_account_holder(x_account_dtls, holder_IDs, acc_holder_Name);
+    _F_IXML150->Inp_party_id_name_account_holder(x_account_holder, v_AccH_ids, account_holder_party_name);
+else 
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует элемент account_holder. Владелец счета не может быть установлен.');
+end;
+
+// ==========================================================
+//              --- account_section_dtls ---
+// ==========================================================
+if (x_main.?account_section_dtls) then
+    //Если указан тэг: <account_section_dtls><account_section_id><id>
+    // Тогда V_AC =<account_section_dtls><account_section_id><id>
+    x_account_section_dtls    := x_main._account_section_dtls;
+    if (x_account_section_dtls.?account_section_id) then
+        x_account_section_id  := x_account_section_dtls._account_section_id;
+        v_account_section_IDs := _F_IXML150->Inp_id_table(x_account_section_id);
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент account_section_dtls\account_section_id');        
+    end;
+end;
+
+// ==========================================================
+//             --- account_section_holder ---
+// ==========================================================
+// по описанию '2.Приложение№1_(R03-1 и R03-2)-v5-2.doc' информация из 
+// данного тэга не требуется
+
+// ==========================================================
+//                --- autorised_person ---
+// ==========================================================
+v_autorised_person_ids := List();     // идентификационная информация вытащенная из тэгов <party_id>
+if x_main.?autorised_person then
+    x_autorised_person := x_main._autorised_person;
+    _F_IXML150->Inp_autorised_person(x_autorised_person, v_autorised_person_s_type, authorised_person_type, v_autorised_person_ids, bases_of_powers, Info);
+end;
+
+// ==========================================================
+//
+//                  --- transaction ---
+//
+// ==========================================================
+// Описание операции с ценными бумагами.   
+//          ОБЯЗАТЕЛЬНО:                   - сумма сделки - в случае перерегистрации прав собственности на ЦБ в реестре акционеров/ПИФ, расчетах на условиях ППП (DVP)
+if x_main.?transaction then
+    x_transaction := x_main._transaction;
+    //    --- transaction/based_info ---
+    if (x_transaction.?based_info) then
+        Info := '';    
+        _F_IXML150->Inp_based_info_table(x_transaction._based_info, v_based_info, Info);
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент based_info.');
+    end; 
+
+    //    --- transaction/security ---     
+    if (x_transaction.?security) then
+        _F_IXML150->Inp_security_info(x_transaction._security, v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI);
+    elsif (x_transaction.?mortgages) then
+        dummy
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательное описание ЦБ (security или mortgages).');
+    end;
+    
+    //    --- transaction/quantity ---
+    if (x_transaction.?quantity) then
+        v_AMOUNT := _F_IXML150->Inp_Quantity_in_unit(x_transaction._quantity);
+        dummy
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный блок quantity');
+    end;
+    
+    //    --- transaction/settlement_amount ---
+    if (x_transaction.?settlement_amount) then        
+        _F_IXML150->Inp_currency_and_amount(x_transaction._settlement_amount, v_ccy_code, v_ccy_amount);
+    end;    
+    
+    //      --- transaction/contragent ---
+    // Блок информации о Контрагентах – может быть множественный, т.е. повторяться множество раз,
+    // Но 1 раз должен быть указан в этих типах поручений – обязательно.
+    // Первым блоком указывается информация о Контрагенте в месте расчетов,
+    // Вторым, при определенных расчетах в ВЭбе или реестрах Паев, может быть указана информация о конечном владельце ЦБ.
+    Info_cr    := '';
+    ContrCount := 0;    
+    if (x_transaction.?contragent) then
+        x_contragent := x_transaction._contragent;
+        x_contragent.@First;
+        inc(ContrCount);
+        _F_IXML150->Inp_party_dtls_v04(x_contragent,
+                                   v_contr_stype, v_contr_full_name, v_contr_nationality, v_contr_inn, v_contr_birthdate, v_contr_place_of_birth, v_contr_doc_type, v_contr_doc_type_xml,
+                                   v_contr_doc_ser, v_contr_doc_num, v_contr_doc_dat, v_contr_DOC_PLACE, v_contr_OGRN, v_contr_OGRN_PLACE, v_contr_OGRN_DATE, Info_cr);
+        BErrList := _F_REPORT->Add_Info(BErrList, Info_cr);                           
+        // Возможно что есть второй блок про второго контрахенту                      
+        Info_cr := '';        
+        if ~x_contragent.@EOF then
+            x_contragent.@Next;
+            inc(ContrCount);
+            _F_IXML150->Inp_party_dtls_v04(x_contragent,
+                                       v_contr_stype_2, v_contr_full_name_2, v_contr_nationality_2, v_contr_inn_2, v_contr_birthdate_2, v_contr_place_of_birth_2, v_contr_doc_type_2, v_contr_doc_type_xml_2,
+                                       v_contr_doc_ser_2, v_contr_doc_num_2, v_contr_doc_dat_2, v_contr_DOC_PLACE_2, v_contr_OGRN_2, v_contr_OGRN_PLACE_2, v_contr_OGRN_DATE_2, Info_cr);            
+        end;
+        BErrList := _F_REPORT->Add_Info(BErrList, Info_cr);                                   
+    end;    
+else
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент transaction.');
+end;
+
+// ============================================================
+//              --- data_storag/account_depo_id --
+//           -- data_storag/account_section_depo_id --
+//                   'ds' - data_storage
+// ============================================================
+Info_cr := '';
+if x_main.?data_storag then
+    x_data_storag := x_main._data_storag;
+    _F_IXML150->Inp_data_storag_v02(x_data_storag, 
+                                    v_account_depo_id, v_account_section_depo_id, v_data_storag_party_name, ds_account_storage_ids, ds_account_section_storage_ids, Info_cr);
+    if ~isBlank(Info_cr) then
+        BErrList := _F_REPORT->Add_Info(BErrList, Info_cr);
+    end    
+else
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент data_storag.');
+end;
+
+// ============================================================
+//              --- data_storag_new/account_depo_id --
+//           -- data_storag_new/account_section_depo_id --
+//                   'dsnw' - data_storage_new
+// ============================================================
+Info_cr := '';
+v_new_account_depo_id            := '';
+v_new_account_section_depo_id    := '';
+v_data_storag_new_party_name     := '';
+dsnw_account_storage_ids         := List();
+dsnw_account_section_storage_ids := List();
+
+if x_main.?data_storag_new then
+    x_data_storag_new := x_main._data_storag_new;
+    _F_IXML150->Inp_data_storag_v02(x_data_storag_new, 
+                                    v_new_account_depo_id, v_new_account_section_depo_id, v_data_storag_new_party_name, dsnw_account_storage_ids, dsnw_account_section_storage_ids, Info_cr);
+    if ~isBlank(Info_cr) then
+        BErrList := _F_REPORT->Add_Info(BErrList, Info_cr);
+    end    
+else
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент data_storag.');
+end;
+
+//................................................................
+//................................................................
+
+// ==========================================================
+//                --- settlement_depository ---
+// ==========================================================
+Info_cr := '';  //критические ошибки
+Info_w  := '';  //предупреждения (warning)
+if x_main.?settlement_depository then
+    x_settlement_depository := x_main._settlement_depository;
+    _F_IXML150->Inp_settlement_depository(x_settlement_depository, kind, 
+                                                                   v_sd_ndc, v_sd_type, v_sd_id, v_section, 
+                                                                   v_name_settlement_place_dep, v_sd_other, v_sd_other_type, v_section_dep, 
+                                                                   v_name_settlement_place_reg, v_acc_other, v_acc_other_type, v_nmnl_depo_acc, v_nmnl_depo_acc_type, v_nmnl_nmnl_depo2_name, v_nmnl_nmnl_depo2_acc, 
+                                                                   Info_cr);    
+else
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент settlement_depository.');
+end;
+if ~isBlank(Info_cr) then
+    BErrList := _F_REPORT->Add_Info(BErrList, Info_cr);
+end;
+
+// ==========================================================
+//                    --- payment_terms ---
+// ==========================================================
+// в отдельную функцию не выносим (пока), разбираем здесь
+mess := ''; Info_cr := ''; Info_w := '';
+payment_term_type_code := '';
+narrative              := '';
+
+if x_main.?payment_terms then 
+    x_payment_terms := x_main._payment_terms;
+    if (x_payment_terms.?payment_term) then            
+            _F_IXML150->Inp_payment_term(x_payment_terms._payment_term, payment_term_type_code, narrative, Info_cr);            
+            if (~isBlank(Info_cr)) then
+                BErrList := _F_REPORT->Add_info(BErrList, Info_cr);
+            end;
+            
+            Info_cr := ''; Info_w := '';
+            //Загрузить элемент dvp_nrd (тип payment_term_t1), если такой есть
+            if (x_payment_terms.?dvp_nrd) then
+                _F_IXML150->Inp_payment_term_1(x_payment_terms._dvp_nrd, payment_term_type_code_1, narrative_1, Info_cr);
+            end;       
+
+            if (~isBlank(Info_cr)) then
+                BErrList := _F_REPORT->Add_info(BErrList, Info_cr);
+            end            
+        else
+            mess := 'Отсутствует обязательынй элемент payment_term';
+            BErrList := _F_REPORT->Add_info(BErrList, mess);
+        end; 
+        
+else    
+    Info_w := 'Отсутствует элемент payment_terms';     //Элемента нет - обрабатывать нечего
+end;
+
+// ==========================================================
+//                    --- add_info ---
+// ==========================================================
+if x_main.?add_info then 
+    ListAdd(v_add_info, x_main._add_info);
+end;
+
+// -------------------------------------------------------------------------------------------------------
+// Поиск субъекта в справочниках исходя из того что в %Attributes
+// Ищем по правилам для аттрибута SHARE
+//_find_SHARE( v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI);
+    // _F_BUX->Get_Share_ID( %CoderMnem, %Code :str; ID :int )
+    // _f_ree->Find_Share_L
+    // _f_cxml->Inp_SecurityIdentification11
+    // _f_cxml->Inp_SecurityIdentification11Choice
+    // _f_cxml->Inp_Share_Gen
+    // _f_cxml->Inp_Share_Id
+    // _F_IN_MESS->AssociateShare
+    // _F_IN_MESS->FIND_SHARE_BT
+    // _F_IN_MESS->F_I_SHARE
+    // _F_OXML->Get_Share_ID_By_NUM_REG
+    // _F_OXML->Get_Share
+    // _F_OXML->Get_ODK_Share
+    // _F_PXML->Inp_Share
+    // _F_SEDO->FindShare
+
+// --------------------------------------- Вычисляем реквизиты, ровно в таком виде как описано в ТЗ -------------------------------------
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+// Это все для INSTRUCTION_TO_DEPO_TRANSFER  
+SYS_NAME := 'I_CLISER_CHANGE';
+
+// ----------  PARAM   ------------------------------------------------------------------------------------------------------------------
+if (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRANSLATION') then
+    PARAM := 5092053;
+elsif (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRADING_TRANSFER') then
+    PARAM := 5092054;
+else
+    TableInsert(%LoLog, List('rekviz=PARAM','critic=0','Info=Не возможно вычислить реквизит'));
+end;
+
+// ----------  PASS_KIND (Тип подачи поручения) -----------------------------------------------------------------------------------------
+PASS_KIND := 8;
+
+// ----------  D_DATE (Дата документа) --------------------------------------------------------------------------------------------------
+// TableInsert(LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_dtls\account_id', 'tags='+str(Account), 'critic=1','Info=Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.'));
+try
+    D_DATE    := date(now);
+except
+    TableInsert(%LoLog, List('rekviz=D_DATE', 'tags_descr=', 'tags=', 'critic=1','Info=Ошибка приведения текущей даты к типу Date'));
+end;
+
+// ----------  NUM (Номер документа) ----------------------------------------------------------------------------------------------------
+// № полученный по стандартной процедуре (следующий №) от D_DATE
+try
+    NUM       := _F_DOC->NextDocumentNum( SYS_NAME, D_DATE, %direction);
+except
+    TableInsert(%LoLog, List('rekviz=NUM', 'tags_descr=SYS_NAME', 'tags='+SYS_NAME, 'critic=1','Info=Не получилось взять следующий номер документа для категории '+SYS_NAME));
+end;
+
+// ----------  CLIENT (Клиент) ----------------------------------------------------------------------------------------------------------
+CLIENT          := clear(0);
+account_section := '';
+if (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRANSLATION') then    // 5092053 - INSTRUCTION_TO_DEPO_TRANSLATION
+    if ~isNull(x_account_section_dtls) then
+        if (ListCount(v_account_section_IDs)>0) then
+            //Если указан тэг: <account_section_dtls><account_section_id><id>
+            // Тогда V_AC =<account_section_dtls><account_section_id><id>
+            account_section := Token(ListGet(v_account_section_IDs, 0),';',1);
+            if ~isBlank(account_section) then                
+                CLIENT  := _F_IXML150->GetClientByNumber(account_section);  
+                if isNull(CLIENT) then
+                    BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(account_section)+' в справочнике не найден.');
+                    TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_section_dtls\account_section_id\id', 'tags='+str(account_section), 'critic=1','Info=Счет с номером '+ str(account_section)+' в справочнике не найден.'));
+                end;
+            else
+                BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент ..\account_section_dtls\account_section_id');
+                TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_section_dtls\account_section_id', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, так как элемент-источник пуст'));
+            end
+        else
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Пустое множество элементов ..\account_section_dtls\account_section_id');
+            TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_section_dtls\account_section_id', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, проблемы с элементом-источником'));            
+        end    
+    else
+        // Иначе V_AC =<depositor_transmit_inf><account_dtls><account_id><id>        
+        if (ListCount(v_depositor_account_IDs)>0) then
+            Account := Token(ListGet(v_depositor_account_IDs, 0),';',1);
+            CLIENT  := _F_IXML150->GetClientByNumber(Account);
+            if isNull(CLIENT) then
+                BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.');
+                TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\depositor_transmit_inf\account_dtls\account_id\id', 'tags='+str(Account), 'critic=1','Info=Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.'));
+            end            
+        else
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент ..\depositor_transmit_inf');
+            TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\depositor_transmit_inf', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, так как элемент-источник пуст'));
+        end
+    end
+elsif (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRADING_TRANSFER') then // 5092054 - INSTRUCTION_TO_DEPO_TRADING_TRANSFER
+    //Если PARAM =INSTRUCTION_TO_DEPO_TRADING_TRANSFER
+    // V_AC =<account_dtls><account_id><id>
+    if (ListCount(account_IDs)>0) then
+        Account := Token(ListGet(account_IDs, 0),';',1);
+        CLIENT  := _F_IXML150->GetClientByNumber(Account);
+        if isNull(CLIENT) then
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.');
+            TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_dtls\account_id', 'tags='+str(Account), 'critic=1','Info=Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.'));
+        end        
+    else    
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Пустое множество элементов ..\account_dtls\account_id');
+        TableInsert(%LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_dtls\account_id', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, так как элемент-источник пуст'));
+    end;
+end;
+
+// ----------  CAGENT (Контрагент) ------------------------------------------------------------------------------------------------------
+CAGENT := clear(0);
+_rstroka_1 := ''; _rstroka_2 := '';
+if (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRANSLATION') then    // 5092053 - INSTRUCTION_TO_DEPO_TRANSLATION
+    // Если PARAM =INSTRUCTION_TO_DEPO_TRANSLATION
+    // V_AC =< depositor_receiv_inf ><account_dtls><account_id><id>
+    Account_cag := v_depositor_receiv_account_id;
+    if ~isBlank(v_depositor_receiv_account_id) then
+        CAGENT      := _F_IXML150->GetClientByNumber(v_depositor_receiv_account_id);
+        if isNull(CAGENT) then
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(ACCOUNT_cag)+' в справочнике не найден.');
+            TableInsert(%LoLog, List('rekviz=CAGENT', 'tags_descr=depositor_receiv_inf\account_dtls\account_id', 'tags='+str(v_depositor_receiv_account_id), 'critic=1','Info=Счет с номером '+ str(v_depositor_receiv_account_id)+' в справочнике не найден.'));
+        end
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Пустое элемент ..depositor_receiv_inf\account_dtls\account_id');
+        TableInsert(%LoLog, List('rekviz=CAGENT', 'tags_descr=depositor_receiv_inf\account_dtls\account_id', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, так как элемент-источник пуст'));    
+    end;
+elsif (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRADING_TRANSFER') then // 5092054 - INSTRUCTION_TO_DEPO_TRADING_TRANSFER
+     // Если PARAM =INSTRUCTION_TO_DEPO_TRADING_TRANSFER
+     // V_AC =<account_dtls_new ><account_id><id>
+     // Выполняется Процедура :Поиск_Счета_ДЕПО(V_AC)
+     Account_cag := Token(ListGet(account_new_IDs, 0),';',1);
+     if ~isBlank(Account_cag) then
+         CAGENT      := _F_IXML150->GetClientByNumber(Account_cag);
+         if isNull(CAGENT) then
+             BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(ACCOUNT_cag)+' в справочнике не найден.');
+             TableInsert(%LoLog, List('rekviz=CAGENT', 'tags_descr=..\account_dtls_new\account_id\id', 'tags='+str(Account_cag), 'critic=1','Info=Счет с номером '+ str(ACCOUNT_cag)+' в справочнике не найден.'));
+         end
+     else
+         BErrList := _F_REPORT->Add_Info(BErrList, 'Пустое множество элементов ..\account_dtls_new\account_id');
+         TableInsert(%LoLog, List('rekviz=CAGENT', 'tags_descr=..\account_dtls_new\account_id\id', 'tags=', 'critic=1','Info=Счет в справочнике не может быть устноавлен, так как элемент-источник пуст'));    
+     end;
+end;
+// ----------  PARTY_TYPE  --------------------------------------------------------------------------------------------------------------
+// 1.1) PARTY_TYPE (Указатель на сторону инициатора) = Передающая сторона (1))
+// Если <depositor_transmit_inf><account_dtls><account_id> = <account_section_dtls><account_section_id><id> ИЛИ <account_dtls><account_id> <id>
+// 1.2) PARTY_TYPE (Указатель на сторону инициатора) = Принимающая сторона (2)
+// Если < depositor_receiv_inf ><account_dtls><account_id> = <account_dtls><account_id> <id>
+PARTY_TYPE         := clear(0);
+Account_pt         := clear('');
+Account_section_pt := clear('');
+if (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRANSLATION') then
+    // _F_IXML150->Inp_account_dtls(x_depositor_account_dtls, v_depositor_account_IDs, v_depositor_account_type, v_depositor_account_name);
+    v_depositor_transmit_account := Token(ListGet(v_depositor_account_IDs, 0), ';', 1);
+    if ~isNull(x_account_section_dtls) then
+        if (ListCount(v_account_section_IDs)>0) then
+            account_section_pt := Token(ListGet(v_account_section_IDs, 0),';',1);
+            if (v_depositor_transmit_account = account_section_pt) then
+                PARTY_TYPE := 1                
+            end;
+        end;
+    end;
+    if isBlank(PARTY_TYPE) then
+        if ~isNull(x_account_dtls) then
+            //_F_IXML150->Inp_account_dtls(x_account_dtls, account_IDs, account_type, account_name);
+            if (ListCount(account_IDs)>0) then
+                Account_pt := Token(ListGet(account_IDs, 0),';',1);
+                if (v_depositor_transmit_account = Account_pt) then
+                    PARTY_TYPE := 1                
+                end;                
+            end;
+        end;    
+    end;
+    //1.2) PARTY_TYPE (Указатель на сторону инициатора) = Принимающая сторона (2)
+    // Если < depositor_receiv_inf ><account_dtls><account_id> = <account_dtls><account_id> <id>
+    if isBlank(PARTY_TYPE) then
+        if ~isBlank(v_depositor_receiv_account_id) then
+            if (ListCount(account_IDs)>0) then
+                Account_pt := Token(ListGet(account_IDs, 0),';',1);
+                if (v_depositor_receiv_account_id = Account_pt) then
+                    PARTY_TYPE := 2;
+                end;
+            end;
+        end;            
+    end
+elsif (%I_SYSNAME = 'INSTRUCTION_TO_DEPO_TRADING_TRANSFER') then
+    //2) PARTY_TYPE (Указатель на сторону инициатора) = Обе стороны сразу (0)
+    //Если PARAM =INSTRUCTION_TO_DEPO_TRADING_TRANSFER
+    PARTY_TYPE := 0;
+else
+    TableInsert(%LoLog, List('rekviz=PARAM_TYPE','critic=1','Info=Не возможно вычислить реквизит'));
+end;
+
+if isBlank(PARTY_TYPE) then
+    TableInsert(%LoLog, List('rekviz=PARAM_TYPE','critic=1','Info=Не возможно вычислить реквизит'));
+end;
+
+// ----------  FROM_FACE   -------------------------------------------------------------------------------------------------------------- 
+// 1) Если во вх.поручении заполнен необязательный тэг <autorised_person>
+_rstroka_1 := ''; _rstroka_2 := '';
+FROM_FACE := -1;
+if ~isNull(x_autorised_person) then
+    //значение<autorised_person><authorised_person_type> =12,13,08
+    if authorised_person_type in List(8,12,13) then
+        _rstroka_1  := '..\autorised_person\authorised_person_dtls';
+        _rstroka_2  := str(v_autorised_person_ids);
+        FROM_FACE :=_F_IXML150->FindFACE_ap( v_autorised_person_ids, v_autorised_person_s_type);
+    end;
+else
+    //2) Если во вх.поручении НЕ заполнен необязательный тэг<autorised_person>
+    //   Это означает, что поручение подает и подписывает владелец счета депо и FROM_FACE будет определяться по анализу тега :<account_holder><party_id><id>
+    cc2 := ListCount(v_AccH_ids);
+    if cc2>0 then _rstroka_1  := '..\account_holder\party_id';dec(cc2);end;
+    While cc2>0 do
+        _rstroka_1  := _rstroka_1 + '#' + '..\account_holder\party_id';
+        dec(cc2);
+    End;    
+    _rstroka_2  := _rstroka_2 + iif(length(_rstroka_2)>0,'#','') + replace(str(v_AccH_ids), #13+#10, '#');    
+    
+    // {err} _rstroka_1  := _rstroka_1 + iif(length(_rstroka_1)>0,'#','')+'..\account_holder';
+    // {err}_rstroka_2  := _rstroka_2 + iif(length(_rstroka_2)>0,'#','') + str(v_AccH_ids);    
+    // FindFACE_accH( %Attributes: list; s_type: int): int    
+    FROM_FACE := _F_IXML150->FindFACE_accH(v_AccH_ids, v_autorised_person_s_type);        
+end;
+
+if FROM_FACE<0 then
+    //Делаем заметку что всё плохо и идем вычислять следующий реквизит
+    //2.3)данный реквизит считается «Не Заполненным!», 
+    //В лог.файл и в общее сообщение обо всех ошибка по ЕМАЙЛ , заноситься информация о том:
+    //«при распаковке вх.сообщения поручения № от дата не определен обязательный реквизит формы поручения: «Имя реквизита»,  по информации из вх.документа: «значение тэга:<…>»
+    TableInsert(%LoLog, List('rekviz=FROM_FACE', 'tags_descr='+_rstroka_1, 'tags='+_rstroka_2, 'critic=1','Info=Не удается вычислить реквизит, субъект отсутствует в справочниках')); 
+end;
+
+
+// ----------  SHARE   -------------------------------------------------------------------------------------------------------------- 
+SHARE := clear(0);
+_rstroka_1 := 'tags_descr='; _rstroka_2 := 'tags=';
+
+if ~isNull(x_transaction) then
+    if ListCount(v_security_code)>0 then             _rstroka_1 := _rstroka_1 + '..\security\security_code'; _rstroka_2 := _rstroka_2 + v_security_code; end;
+    if ListCount(v_proprietary_security_code)>0 then _rstroka_1 := _rstroka_1 + '#' + '..\security\proprietary_security_code'; _rstroka_2 := _rstroka_2 + '#' + v_proprietary_security_code; end;
+    if ~isBlank(v_NumReg) then                       _rstroka_1 := _rstroka_1 + '#' + '..\security\state_reg_num'; _rstroka_2 := _rstroka_2 + '#' + v_NumReg;end;
+    if ~isBlank(v_ISIN) then                         _rstroka_1 := _rstroka_1 + '#' + '..\security\ISIN_identifier'; _rstroka_2 := _rstroka_2 + '#' + v_ISIN;end;
+    if ~isBlank(v_CFI) then                          _rstroka_1 := _rstroka_1 + '#' + '..\security\security_classification_CFI'; _rstroka_2 := _rstroka_2 + '#' + v_CFI;end;
+    //FindShare( %Attributes, %Attributes_prop: list; %v_NumReg, %v_ISIN, %v_CFI: str)
+    // Передаем в FindShare два списка с кодами идентификации ценной бумаги. Список v_security_code всегда состоит из 1 записи.
+    SHARE :=_F_IXML150->FindShare( v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI);
+    if (isBlank(SHARE)) then
+        TableInsert(%LoLog, List('rekviz=SHARE', _rstroka_1, _rstroka_2, 'critic=1','Info=Не удается вычислить реквизит. Финансовый инструмент отсутствует в справочниках')); 
+    end;
+else
+    // Такой случай в штатной работе конечно не возможен - отсутствие тэге transaction должно обнаружится на этапе валидации документа XML согласно XSD схеме. 
+    TableInsert(%LoLog, List('rekviz=SHARE', 'tags_descr=transaction', 'tags=', 'critic=1','Info=Не удается вычислить реквизит, так как отсутствует источник данных.')); 
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент transaction.');
+end;
+
+// -----------  LINE   -------------------------------------------------------------------------------------------------------------- 
+LINE := clear(0);
+_rstroka_1 := 'tags_descr='; _rstroka_2 := 'tags=';
+if ~isNull(x_data_storag) then
+    //v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI
+    //                  FindStorage( %AccPlan: int; %Storage_ids, %Storage_Sect_ids  : list; %v_account_depo_id, %v_account_section_depo_id: str; %share: int): int
+    if ListCount(ds_account_storage_ids)>0 then         _rstroka_1 := _rstroka_1 + '..\account_storage_id'; _rstroka_2 := _rstroka_2 + ds_account_storage_ids; end;
+    if ListCount(ds_account_section_storage_ids)>0 then _rstroka_1 := _rstroka_1 + '#' + '..\account_section_storage_id'; _rstroka_2 := _rstroka_2 + '#' + ds_account_section_storage_ids; end;
+    if ~isBlank(v_account_depo_id) then                 _rstroka_1 := _rstroka_1 + '#' + '..\account_depo_id'; _rstroka_2 := _rstroka_2 + '#' + v_account_depo_id;end;
+    if ~isBlank(v_account_section_depo_id) then         _rstroka_1 := _rstroka_1 + '#' + '..\account_section_depo_id'; _rstroka_2 := _rstroka_2 + '#' + v_account_section_depo_id;end;
+    LINE := _F_IXML150->FindStorage(AccPlan, ds_account_storage_ids, ds_account_section_storage_ids, v_account_depo_id, v_account_section_depo_id, SHARE);    
+    if isBlank(LINE) then
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Не удалось определить место хранения.');
+        TableInsert(%LoLog, List('rekviz=LINE',_rstroka_1, _rstroka_2, 'critic=1', 'Info=Не удается вычислить реквизит. Место хранения в справочниках не найдено'));     
+    end;
+else
+    // Такой случай в штатной работе конечно невозможен - отсутствие тэге transaction должно обнаружится на этапе валидации документа XML согласно XSD схеме. 
+    TableInsert(%LoLog, List('rekviz=LINE', 'tags_descr=..\data_storag', 'tags=', 'critic=1', 'Info=Не удается вычислить реквизит, так как отсутствует обязательный элемент data_storag'));     
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент data_storag.');
+end;
+
+// -----------  CLINE   ------------------------------------------------------------------------------------------------------------ 
+CLINE := clear(0);
+_rstroka_1 := 'tags_descr='; _rstroka_2 := 'tags=';
+if %I_SYSNAME='INSTRUCTION_TO_DEPO_TRADING_TRANSFER' then
+    if ~isNull(x_data_storag_new) then
+        //v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI
+        //                  FindStorage( %AccPlan: int; %Storage_ids, %Storage_Sect_ids  : list; %v_account_depo_id, %v_account_section_depo_id: str; %share: int): int
+        if ListCount(dsnw_account_storage_ids)>0 then         _rstroka_1 := _rstroka_1 + '..\account_storage_id'; _rstroka_2 := _rstroka_2 + dsnw_account_storage_ids; end;
+        if ListCount(dsnw_account_section_storage_ids)>0 then _rstroka_1 := _rstroka_1 + '#' + '..\account_section_storage_id'; _rstroka_2 := _rstroka_2 + '#' + dsnw_account_section_storage_ids; end;
+        if ~isBlank(v_new_account_depo_id) then                 _rstroka_1 := _rstroka_1 + '#' + '..\account_depo_id'; _rstroka_2 := _rstroka_2 + '#' + v_new_account_depo_id;end;
+        if ~isBlank(v_new_account_section_depo_id) then         _rstroka_1 := _rstroka_1 + '#' + '..\account_section_depo_id'; _rstroka_2 := _rstroka_2 + '#' + v_new_account_section_depo_id;end;
+        CLINE := _F_IXML150->FindStorage(AccPlan, dsnw_account_storage_ids, dsnw_account_section_storage_ids, v_new_account_depo_id, v_new_account_section_depo_id, SHARE);    
+        if isBlank(CLINE) then
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Не удалось определить место хранения.');
+            TableInsert(%LoLog, List('rekviz=CLINE',_rstroka_1, _rstroka_2, 'critic=0', 'Info=Не удается вычислить реквизит. Место хранения в справочниках не найдено'));     
+        end;
+    else
+        // Такой случай в штатной работе конечно невозможен - отсутствие тэге transaction должно обнаружится на этапе валидации документа XML согласно XSD схеме. 
+        TableInsert(%LoLog, List('rekviz=CLINE', 'tags_descr=..\data_storag_new', 'tags=', 'critic=0', 'Info=Не удается вычислить реквизит, так как отсутствует обязательный элемент data_storag'));     
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент data_storag.');
+    end;
+end;
+
+
+// -----------  G_TEXT  ------------------------------------------------------------------------------------------------------------- 
+G_TEXT := v_add_info;
+
+// -----------  AMOUNT  -------------------------------------------------------------------------------------------------------------- 
+if ~isBlank(v_AMOUNT) then
+    if v_NumReg = '10302307B' then
+        AMOUNT := v_AMOUNT/1000000;
+    else
+        AMOUNT := float(v_AMOUNT);
+    end;
+else
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Значение элемента AMOUNT пусто');
+    TableInsert(%LoLog, List('rekviz=AMOUNT', 'tags_descr=..\quantity\units', 'tags=', 'critic=1','Info=Не удается вычислить реквизит, так как отсутствует источник данных.'));
+end;
+
+// -----------  G_SUM  -------------------------------------------------------------------------------------------------------------- 
+// <transaction><settlement_amount><amount>
+G_SUM := clear(0.0);
+if ~isBlank(v_ccy_amount) then
+    try
+        G_SUM := float(v_ccy_amount);
+    except
+        G_SUM := 0.0;
+        TableInsert(%LoLog, List('rekviz=G_SUM', 'tags_descr=..\transaction\settlement_amount\ccy_amount', 'tags='+str(v_ccy_amount), 'critic=0', 'Info=В тэге-источнике хранится не корректное числовое значение.'));
+    end;
+else
+    G_SUM := 0.0;
+end;
+
+// -----------  G_VAL  -------------------------------------------------------------------------------------------------------------- 
+// <transaction><settlement_amount><ccy_code>
+G_VAL := clear(0);
+if isBlank(v_ccy_code) then
+    v_ccy_code := 'RUB'
+end;
+try 
+    G_VAL := Extract('Данные',[SELECT ID
+                               FROM OD_VALUES
+                               WHERE V_TYPE=1 and f_Rus12Lat(SYSNAME)=:SN], _F_IXML150->NormalizeB(v_ccy_code)
+                     );
+    if (isBlank(G_VAL)) then
+        TableInsert(%LoLog, List('rekviz=G_VAL', 'tags_descr=..\transaction\settlement_amount\ccy_code', 'tags='+str(v_ccy_code), 'critic=0', 'Info=Не удается вычислить реквизит, указанная валюта в тэге-источнике не находит отражения в справочниках.'));
+    end
+except
+    TableInsert(%LoLog, List('rekviz=G_VAL', 'tags_descr=..\transaction\settlement_amount\ccy_code', 'tags='+str(v_ccy_code), 'critic=0', 'Info=Не удается вычислить реквизит, указанная валюта в тэге-источнике не находит отражения в справочниках.'));
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Не удается определить реквизит G_VAL. Значение xml тэга ccy_code='+str(v_ccy_code));
+end;
+
+// -----------  G_CLASS, G_NUM, G_DATE ----------------------------------------------------------------------------------------------- 
+// transaction><based_info><contract_type><contract_code>
+Info_cr    := '';
+if (ListCount(v_based_info)>0) then
+    //FindBases(%L_bases:List; doc_type:int; doc_type_code, doc_num: str; doc_date: date; OtherBases:List; Info_str: str)
+    // Формат списка v_based_info :  doc_type;doc_num;doc_date;doc_validity;doc_narrative;doc_type_code
+    _F_IXML150->FindBases(v_based_info, v_doc_type, v_doc_type_code, G_NUM, G_DATE, v_bi_other, Info_cr);
+    //G_CLASS := Extract('Данные', [select NUM from OD_SYS_TABS where ALT = :ALT], v_doc_type);
+    if ~isNull(v_doc_type) then
+        G_CLASS  := v_doc_type;    
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Не удается определить реквизит G_CLASS по системному классификатору. Значение xml тэга contract_type='+str(v_doc_type));
+        TableInsert(%LoLog, List('rekviz=G_CLASS', 'tags_descr=..\contract_type\contract_code', 'tags='+v_doc_type_code, 'critic=1','Info=Не удается вычислить реквизит, так как отсутствует источник данных.'));       
+    end;
+end;    
+G_TEXT  := G_TEXT + replace(v_bi_other, #13+#10, ', ');
+
+// ----------- S_DATE (Дата сделки) ---------------------------------------------------------------------------------------------------
+S_DATE := clear(date('31.12.1899'));
+
+// ----------- M_DATE (Дата расчетов) -------------------------------------------------------------------------------------------------
+M_DATE := clear(date('31.12.1899'));
+
+// ----------- D1_DATE (Дата депозитарного договора), D1_NUM (Номер  депозитарного договора)  -----------------------------------------
+D1_NUM := clear(''); D1_DATE := clear(date('31.12.1899'));
+if ~isBLank(CLIENT) then
+    try
+        ExtractSQL('Данные', [select c.DD_NUM, c.DD_DATE
+                              from OD_CLIENTS c
+                              where c.ID = :ID], CLIENT, D1_NUM, D1_DATE);
+    except
+        TableInsert(%LoLog, List('rekviz=D1_NUM', 'tags_descr=CLIENT', 'tags='+str(CLIENT) + ' ('+str(Account)+')', 'critic=1','Info=Не удается вычислить реквизит, ошибка при выполнении запроса к Базе данных'));
+    end;
+    if isBlank(D1_NUM) then
+        TableInsert(%LoLog, List('rekviz=D1_NUM', 'tags_descr=CLIENT', 'tags='+str(CLIENT) + ' ('+str(Account)+')', 'critic=1','Info=Не указан номер депозитарного договора в справочнике по счету SELF_ID='+str(CLIENT)));
+    end;
+    if isBlank(D1_DATE) then
+        TableInsert(%LoLog, List('rekviz=D1_DATE', 'tags_descr=CLIENT', 'tags='+str(CLIENT) + ' ('+str(Account)+')', 'critic=1','Info=Не указана дата депозитарного договора в справочнике по счету SELF_ID='+str(CLIENT)));
+    end;
+    
+else
+    TableInsert(%LoLog, List('rekviz=D1_NUM', 'tags_descr=CLIENT', 'tags=', 'critic=1','Info=Не удается вычислить реквизит, так как отсутствует источник данных.'));       
+end;
+
+// ----------- D2_DATE (Дата депозитарного договора), D2_NUM (Номер  депозитарного договора)  -----------------------------------------
+D2_NUM := clear(''); D2_DATE := clear(date('31.12.1899'));
+if ~isBLank(CAGENT) then
+    try
+        ExtractSQL('Данные', [select c.DD_NUM, c.DD_DATE
+                              from OD_CLIENTS c
+                              where c.ID = :ID], CAGENT, D2_NUM, D2_DATE);
+    except
+        TableInsert(%LoLog, List('rekviz=D2_NUM', 'tags_descr=CAGENT', 'tags='+str(CAGENT) + ' ('+str(Account_cag)+')', 'critic=1','Info=Не удается вычислить реквизит, ошибка при выполнении запроса к Базе данных'));
+    end;
+    if isBlank(D1_NUM) then
+        TableInsert(%LoLog, List('rekviz=D2_NUM', 'tags_descr=CAGENT', 'tags='+str(CAGENT) + ' ('+str(Account_cag)+')', 'critic=1','Info=Не указан номер депозитарного договора в справочнике по счету SELF_ID='+str(CAGENT)));
+    end;
+    if isBlank(D1_DATE) then
+        TableInsert(%LoLog, List('rekviz=D2_DATE', 'tags_descr=CAGENT', 'tags='+str(CAGENT) + ' ('+str(Account_cag)+')', 'critic=1','Info=Не указана дата депозитарного договора в справочнике по счету SELF_ID='+str(CAGENT)));
+    end;
+    
+else
+    TableInsert(%LoLog, List('rekviz=D2_NUM', 'tags_descr=CAGENT', 'tags=', 'critic=1','Info=Не удается вычислить реквизит, так как отсутствует источник данных.'));       
+end;
+
+// Создание нового документа - Поручения на открытие счета депо
+
+// Открываем файл для просмотра
+//if ~%mute then _F_DOC->ShowDoc(NewDocId, True); end;
+
+DebugLog :=List(
+'SYS_NAME'+#9+':'+str(SYS_NAME),
+'PARAM'+#9+':'+str(PARAM),
+'PASS_KIND'+#9+':'+str(PASS_KIND),
+'D_DATE'+#9+':'+str(D_DATE),
+'NUM'+#9+':'+str(NUM),
+'CLIENT'+#9+':'+str(CLIENT),
+'FROM_FACE'+#9+':'+str(FROM_FACE),
+'SHARE'+#9+':'+str(SHARE),
+'LINE'+#9+':'+str(LINE),
+'CAGENT'+#9+':'+str(CAGENT),
+'G_TEXT'+#9+':'+str(G_TEXT),
+'AMOUNT'+#9+':'+str(AMOUNT),
+'G_CLASS'+#9+':'+str(G_CLASS),
+'G_NUM'+#9+':'+str(G_NUM),
+'G_DATE'+#9+':'+str(G_DATE),
+'D1_DATE'+#9+':'+str(D1_DATE),
+'D1_NUM'+#9+':'+str(D1_NUM),
+'D2_DATE'+#9+':'+str(D2_DATE),
+'D2_NUM'+#9+':'+str(D2_NUM)
+  );
+
+
+0

@@ -1,0 +1,673 @@
+// Parse_REQUEST_FOR_STATEMENT(%DOC_ID, %Mute, %PPNum, %PPData, %PCode, %POutNum:str; %B, ErrList)
+// 
+// EKS 03.2019
+
+var body;
+var x_main, x_account_dtls, x_autorised_person, x_issuer, x_security, x_statement_date, x_period, x_date, x_statement_time;
+var SenderDocNum, SenderDocDate;
+// переменные для присвоения значений тэгов
+var account_IDs, account_type, account_name, account_holder_party_name, v_autorised_person_ids, v_AccH_ids,
+    authorised_person_type, 
+    v_autorised_person_s_type,
+    v_statement_type, 
+    v_issuer_IDs, v_issuer_type, v_issuer_Name, v_issuer_s_type,
+    v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI,
+    v_statement_date_start_date, v_statement_date_end_date, v_statement_date_date, v_periodicity,
+    v_time_beginning, v_time_ending, v_time_time, tag_tail, v_add_info;
+// переменные промежуточные
+var _rstroka_1, _rstroka_2, prom_date, time_tail, critic_share, critic_iss, direction, f_doc, cc, r_doc, status, err, D_ID, i, fSTATE,
+    ErrTag, PNum, PData, COMMENT, RUBRICA, CREATOR, ID, D_CAT, cc2, ErrStr, rez, DD1, DD2,
+    WHOS := _Sys_Setings_F.OD_SETS._WHOS;
+
+var Account, Info, bases_of_powers;
+var doc_state := 1;
+var AccPlan := Extract('Данные', [select ID from OD_ACC_PLANS where WHOS=:WH and SYS_NAME='DEPO_BANK'], MyFace);
+var statement_type:=clear(''), statement_time:=clear(now);
+var BegDate:=clear(now), EndDate:=clear(now), period:=clear('');
+var BErrList;
+var LoLog   := Table (Rekviz str, tags_descr str, tags str, critic int, Info Str, type str);
+var PhantomDoc := Table( SYS_NAME str, NUM str, CONTR_DATE date, CLIENT int, CAGENT int, PARTY_TYPE int, FROM_FACE int, RELATION int);
+
+
+var SYS_NAME,
+    PARAM,
+    PASS_KIND,
+    D_DATE,
+    NUM,
+    CLIENT,
+    FROM_FACE,
+    D_TYPE,
+    REGULARITY ,
+    ISSUER,
+    SHARE,
+    B_DATE,
+    E_DATE,
+    G_TEXT;
+
+x_autorised_person := null;
+x_issuer           := null;
+x_security         := null;
+x_statement_date   := null;
+x_period           := null;
+x_date             := null;
+x_statement_time   := null;
+
+BErrList           := List();
+ErrList            := '';
+direction          := 0;       //Направление создаваемго документа (1 - Входящий, 2 - Исходящий, 0 - Внутрениий)
+fSTATE  :=2;       // Состояние по умолчанию в котором создается ЗЖРД
+
+// ---------------- Проверяем наличие Входящего ЗЖРД к Входящему сообщению %DOC_ID -----------------
+for 'Данные' select [
+    select f.DOC
+       from OD_STEPS s
+              left join D_FILER f on f.DOC = s.A_DOC 
+    where s.DOC=:DOC  and s.S_TYPE=0 and s.ERR_CODE=2004/*входящий образ*/   --d.WHOS=11286 
+             and f.DOC is not null ]
+from %DOC_ID
+into f_doc
+do
+    _F_DOC->Link_Del(%DOC_ID, f_doc, 2004);
+    // - Если решим что привязанный образ надо удалять - то раскоментировать строку ниже
+    ExecSQL('Данные', [delete from OD_DOCS where ID = :doc], f_doc);
+end;
+
+// -------------------------------------------------------------------------------------------------
+
+iif (%mute, dummy,
+   StartProgress('Распаковка документа',
+                   List('Проверка XML файла по схеме',
+                        'Разбор XML - файла',
+                        'Поиск идентификаторов в XML',
+                        'Создание нового документа - Распоряжения на предоставление выписки')));
+
+iif(%mute, dummy, DoProgress(0, 0, 1));
+
+if (~isNull(%doc_id)) then
+    body   := Extract( 'Данные', 'select BODY from D_IN_MESS where DOC=:D', %doc_id);
+else
+    body   := %B;
+end;
+
+// ---------------- Проверка структуры XML документа на соответствие XSD схеме -----------------
+if (_Sys_Setings_F.OD_SETS._SAVE_MODE = 1) then 
+   if (_F_IXML150->Check_xml_content(body, 'specdep_xml_1_5_0', %mute, ErrList)<>1) then
+      if %mute then  
+          return(100)
+      else
+          raise(ErrList);
+      end;          
+   end;
+end;
+
+
+iif(%mute, dummy, DoProgress(0, 1, 1));
+iif(%mute, dummy, DoProgress(1, 0, 1));
+
+SelectSQL('Данные', [select NUM, NAME from OD_USR_TABS where CODE='RUBRICATOR' and DOP=:N], %PCode, RUBRICA, COMMENT,exit); //пытаемся найти рубрику по наименованию поручения
+SelectSQL('Данные', [select ID from OD_OPERATORS where f_Left(f_Upper(USER_DOL),9)='CODE=AVTO'], CREATOR, exit); //хотят опеарциониста с таким вот признаком
+
+try
+    x_main := _Metal_F->XML_Open(body, '');
+
+    // Разбираем шапку
+    //   PNum  = \header\doc_num
+    //   PData = \header\doc_date\date
+    if (x_main.?header) then
+        _F_IXML150->Inp_out_doc(x_main, PNum, PData);    
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует заголовок header');
+    end;
+    // Разбираем всё остальное
+
+    // ==========================================================
+    //                    --- issuer ---
+    // ==========================================================
+    Info := '';
+    v_issuer_IDs := List(); v_issuer_type := '';  v_issuer_Name := '';
+    if (x_main.?issuer) then
+        x_issuer := x_main._issuer;
+        _F_IXML150->Inp_issuer(x_issuer, v_issuer_IDs, v_issuer_type, v_issuer_Name, Info);
+    end;
+
+    // ==========================================================
+    //                    --- account_dtls ---
+    // ==========================================================
+    account_IDs  := List();
+    account_type := '';
+    account_name := '';
+    if x_main.?account_dtls then
+        x_account_dtls := x_main._account_dtls;
+        _F_IXML150->Inp_account_dtls(x_account_dtls, account_IDs, account_type, account_name);
+    else 
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует элемент account_dtls. Счет для поручения не может быть установлен.');
+    end;
+
+    // ==========================================================
+    //                    --- account_holder ---
+    // ==========================================================
+    v_AccH_ids := List();
+    if x_main.?account_holder then
+        x_account_dtls := x_main._account_holder;
+        //_F_IXML150->Inp_account_holder(x_account_dtls, holder_IDs, acc_holder_Name);
+        _F_IXML150->Inp_party_id_name_account_holder(x_account_dtls, v_AccH_ids, account_holder_party_name);
+    else 
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует элемент account_holder. Владелец счета не может быть установлен.');
+    end;
+
+    // ==========================================================
+    //                --- autorised_person ---
+    // ==========================================================
+    v_autorised_person_ids := List();     // идентификационная информация вытащенная из тэгов <party_id>
+    if x_main.?autorised_person then
+        x_autorised_person := x_main._autorised_person;
+        _F_IXML150->Inp_autorised_person(x_autorised_person, v_autorised_person_s_type, authorised_person_type, v_autorised_person_ids, bases_of_powers, Info);
+    end;
+
+    // ==========================================================
+    //                --- statement_type ---
+    // ==========================================================
+    v_statement_type := clear('');
+    if (x_main.?statement_type) then
+        v_statement_type := x_main._statement_type;
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент statement_type.');
+    end;
+
+    // ==========================================================
+    //                --- statement_time ---
+    // ==========================================================
+    v_time_beginning := null;
+    v_time_ending    := null;
+    v_time_time      := null;
+    if (x_main.?statement_time) then
+        x_statement_time := x_main._statement_time;
+        if (x_statement_time.?beginning) then 
+            v_time_beginning := x_statement_time._beginning;
+        elsif (x_statement_time.?ending) then
+            v_time_ending := x_statement_time._ending;
+        elsif (x_statement_time.?time) then
+            v_time_time := x_statement_time._time;
+        end;    
+    end;
+
+    // ==========================================================
+    //                --- statement_date ---
+    // ==========================================================
+    v_statement_date_start_date := null;
+    v_statement_date_end_date   := null;
+    v_statement_date_date       := null;
+    v_periodicity               := clear('');
+    if (x_main.?statement_date) then
+        x_statement_date := x_main._statement_date;
+        if (x_statement_date.?period) then
+            x_period := x_statement_date._period;
+            v_statement_date_start_date := x_period._start_date;
+            v_statement_date_end_date   := x_period._end_date;
+        elsif (x_statement_date.?date) then
+            v_statement_date_date := x_statement_date._date;
+        elsif (x_statement_date.?periodicity) then
+            v_periodicity         := x_statement_date._periodicity;
+        else
+            BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный один из обязательных подэлементов элемента statement_date');
+        end;    
+    else
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент statement_date');
+    end;
+    // ==========================================================
+    //                --- security ---
+    // ==========================================================
+    v_security_code             := List();
+    v_proprietary_security_code := List(); 
+    v_NumReg :=''; v_ISIN := ''; v_CFI := '';
+    if (x_main.?security) then
+        x_security := x_main._security;
+        _F_IXML150->Inp_security_info(x_security, v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI);
+    end;
+
+    // ==========================================================
+    //                --- add_info ---
+    // ==========================================================
+    v_add_info := clear('');
+    if (x_main.?add_info) then
+        v_add_info := x_main._add_info;
+    end;
+
+    _Metal_F->XML_Close;
+except
+    //--------------------------
+    // Будет регистрация входящего ЗЖРД с минимальными данными. входящая ЗЖРД привязана к Входящему сообщению.
+    TableInsert(LoLog, List('rekviz=','tags_descr=' ,'tags=' , 'critic=2','Info=Непредвиденная ошибка при разборе XML содержимого документа № ' + str(%PPnum) + ' от ' + str(%PPData) + ':' + replace(Exception.Text,#13+#10, ' ')));  
+    // --------------------------
+    _Metal_F->XML_Close;
+end;     
+
+iif(%mute, dummy, DoProgress(1, 1, 1));
+iif(%mute, dummy, DoProgress(2, 0, 1));
+
+// ----------- SYS_NAME  -------------------------------------------------------------------------------------------------------------- 
+SYS_NAME := 'I_CLISER_Z_EXTR';
+
+// ----------- PARAM  -------------------------------------------------------------------------------------------------------------- 
+PARAM  := 5095993;   //Поручение на выдачу информации
+
+// ----------- PASS_KIND  -------------------------------------------------------------------------------------------------------------- 
+PASS_KIND := 8;   //= По системе ЭДО 
+
+// ----------  D_DATE (Дата документа) --------------------------------------------------------------------------------------------------
+// TableInsert(LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_dtls\account_id', 'tags='+str(Account), 'critic=1','Info=Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.'));
+try
+    D_DATE    := date(now);
+except
+    TableInsert(LoLog, List('rekviz=D_DATE', 'tags_descr=', 'tags=', 'critic=1','Info=Ошибка приведения текущей даты к типу Date'));
+end;
+
+// ----------  NUM (Номер документа) ----------------------------------------------------------------------------------------------------
+// № полученный по стандартной процедуре (следующий №) от D_DATE
+try
+    NUM       := _F_DOC->NextDocumentNum( SYS_NAME, D_DATE, direction);
+except
+    TableInsert(LoLog, List('rekviz=NUM', 'tags_descr=SYS_NAME', 'tags='+SYS_NAME, 'critic=1','Info=Не получилось взять следующий номер документа для категории '+SYS_NAME));
+end;
+
+// ----------- CLIENT  -------------------------------------------------------------------------------------------------------------- 
+// <account_dtls><account_id><id>
+
+//account_IDs, account_type, account_name
+
+CLIENT     := clear(0);
+if (ListCount(account_IDs))>0 then
+    // В ТЗ нет указанаия какой из account_id брать берем первый попавшийся.
+    Account := Token(ListGet(account_IDs, 0),';',1);
+    CLIENT  := _F_IXML150->GetClientByNumber(Account);
+    if isBlank(CLIENT) then
+        BErrList := _F_REPORT->Add_Info(BErrList, 'Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.');
+        TableInsert(LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_dtls\account_id', 'tags='+str(Account), 'critic=1','Info=Счет с номером '+ str(ACCOUNT)+' в справочнике не найден.'));
+    end
+else    
+    TableInsert(LoLog, List('rekviz=CLIENT', 'tags_descr=..\account_id\id', 'tags='+str(Account), 'critic=1','Info=Не удается вычислить реквизит, так как значение тэга-источника пусто')); 
+end;
+
+// ----------- FROM_FACE  -------------------------------------------------------------------------------------------------------------- 
+//<autorised_person><authorised_person_dtls><party_id><id>
+//<account_holder><party_id><id>
+// 1) Если во вх.поручении заполнен необязательный тэг <autorised_person>
+_rstroka_1 := ''; _rstroka_2 := '';
+FROM_FACE := -1;
+if ~isNull(x_autorised_person) then
+    //значение<autorised_person><authorised_person_type> =12,13,08
+    if authorised_person_type in List(8,12,13) then
+        _rstroka_1  := '..\autorised_person\authorised_person_dtls';
+        _rstroka_2  := str(v_autorised_person_ids);
+        FROM_FACE :=_F_IXML150->FindFACE_ap( v_autorised_person_ids, v_autorised_person_s_type);
+    end;
+else
+    //2) Если во вх.поручении НЕ заполнен необязательный тэг<autorised_person>
+    //   Это означает, что поручение подает и подписывает владелец счета депо и FROM_FACE будет определяться по анализу тега :<account_holder><party_id><id>
+    cc2 := ListCount(v_AccH_ids);
+    if cc2>0 then _rstroka_1  := '..\account_holder\party_id';dec(cc2);end;
+    While cc2>0 do
+        _rstroka_1  := _rstroka_1 + '#' + '..\account_holder\party_id';
+        dec(cc2);
+    End;    
+    _rstroka_2  := _rstroka_2 + iif(length(_rstroka_2)>0,'#','') + replace(str(v_AccH_ids), #13+#10, '#');    
+
+    // {err}_rstroka_1  := _rstroka_1 + iif(length(_rstroka_1)>0,'#','')+'..\account_holder';
+    // {err}_rstroka_2  := _rstroka_2 + iif(length(_rstroka_2)>0,'#','') + str(v_AccH_ids);    
+    // FindFACE_accH( %Attributes: list; s_type: int): int    
+    FROM_FACE := _F_IXML150->FindFACE_accH(v_AccH_ids, v_autorised_person_s_type);        
+end;
+
+if FROM_FACE<0 then
+    //Делаем заметку что всё плохо и идем вычислять следующий реквизит
+    //2.3)данный реквизит считается «Не Заполненным!», 
+    //В лог.файл и в общее сообщение обо всех ошибка по ЕМАЙЛ , заноситься информация о том:
+    //«при распаковке вх.сообщения поручения № от дата не определен обязательный реквизит формы поручения: «Имя реквизита»,  по информации из вх.документа: «значение тэга:<…>»
+    TableInsert(LoLog, List('rekviz=FROM_FACE', 'tags_descr='+_rstroka_1, 'tags='+_rstroka_2, 'critic=1','Info=Не удается вычислить реквизит, субъект отсутствует в справочниках')); 
+end;
+
+// ----------- D_TYPE  -------------------------------------------------------------------------------------------------------------- 
+// <statement_type>
+D_TYPE := clear('');
+if ~isBlank(v_statement_type) then
+    if (v_statement_type in List('HOLD', 'ISSU', 'SECU')) then
+        // Выписка на конец периода
+        D_TYPE := 0;
+    elsif (v_statement_type in List('RHLD','RISS', 'RSEC')) then
+        // Справка о количестве на дату
+        D_TYPE := 3;
+    elsif (v_statement_type in List('IFTR','TREM','TRCB')) then
+        // Отчет по операциям за период
+        D_TYPE := 2;
+    else
+        TableInsert(LoLog, List('rekviz=D_TYPE', 'tags_descr=..\statement_type', 'tags='+str(v_statement_type), 'critic=0','Info=Недопустимое содержимое тэга-источника')); 
+    end;
+else
+    TableInsert(LoLog, List('rekviz=D_TYPE', 'tags_descr=..\statement_type', 'tags=', 'critic=0','Info=Не удается вычислить реквизит, отсутствует тэг-источник')); 
+end;
+
+// ----------- REGULARITY   -------------------------------------------------------------------------------------------------------------- 
+// <periodicity>
+REGULARITY := 0;     // 0 - значение по умолчанию
+if ~isBlank(v_periodicity) then
+    if (v_statement_type in List('HOLD', 'ISSU', 'SECU')) then
+        if (v_periodicity = 'daily') then
+            // Выписка на конец периода
+            REGULARITY := 6;
+        elsif (v_periodicity = 'weekly') then
+            // Справка о количестве на дату
+            REGULARITY := 5;
+        elsif (v_periodicity = 'monthly') then
+            // Отчет по операциям за период
+            REGULARITY := 3;
+        else
+            TableInsert(LoLog, List('rekviz=REGULARITY', 'tags_descr=..\periodicity', 'tags='+str(v_periodicity), 'critic=0','Info=Недопустимое содержимое тэга-источника')); 
+        end;
+    end    
+else
+    TableInsert(LoLog, List('rekviz=REGULARITY', 'tags_descr=..\periodicity', 'tags=', 'critic=0','Info=Не удается вычислить реквизит, отсутствует тэг-источник')); 
+end;
+
+// ----------- ISSUER  -------------------------------------------------------------------------------------------------------------- 
+// <issuer><issuer_name><party_id><id>
+ISSUER := clear(0);
+if (v_statement_type in List('ISSU', 'SECU', 'TREM', 'TRCB', 'RISS', 'RSEC')) then
+    critic_iss := 1
+else
+    critic_iss := 0
+end;
+if (ListCount(v_issuer_IDs)>0) then     
+    ISSUER := _F_IXML150->FindFACE_accH(v_issuer_IDs, v_issuer_s_type);    // v_issuer_s_type - выходной параметр, в нем мы получим кого нашли, физика или юрика
+    if isBlank(ISSUER) then 
+        TableInsert(LoLog, List('rekviz=ISSUER', 'tags_descr=..\issuer\issuer_name', 'tags='+v_issuer_IDs, 'critic='+str(critic_iss),'Info=Не удается вычислить реквизит, субъект не найден в справочниках')); 
+    end
+else
+    TableInsert(LoLog, List('rekviz=ISSUER', 'tags_descr=..\issuer\issuer_name', 'tags=', 'critic='+str(critic_iss),'Info=Не удается вычислить реквизит, так как отсутствует тэг-источник'));     
+end;
+
+// ----------- SHARE  -------------------------------------------------------------------------------------------------------------- 
+// <security><security_code><id>
+// ----------  SHARE   -------------------------------------------------------------------------------------------------------------- 
+SHARE := clear(0);
+_rstroka_1 := 'tags_descr='; _rstroka_2 := 'tags=';
+// для 'SECU', 'TRCB', 'RSEC' реквизит SHARE обязательный
+if (v_statement_type in List('SECU', 'TRCB', 'RSEC')) then
+    critic_share := 1
+else
+    critic_share := 0
+end;    
+if ~isNull(x_security) then
+    if ListCount(v_security_code)>0 then             _rstroka_1 := _rstroka_1 + '..\security\security_code'; _rstroka_2 := _rstroka_2 + v_security_code; end;
+    if ListCount(v_proprietary_security_code)>0 then _rstroka_1 := _rstroka_1 + '#' + '..\security\proprietary_security_code'; _rstroka_2 := _rstroka_2 + '#' + v_proprietary_security_code; end;
+    if ~isBlank(v_NumReg) then                       _rstroka_1 := _rstroka_1 + '#' + '..\security\state_reg_num'; _rstroka_2 := _rstroka_2 + '#' + v_NumReg;end;
+    if ~isBlank(v_ISIN) then                         _rstroka_1 := _rstroka_1 + '#' + '..\security\ISIN_identifier'; _rstroka_2 := _rstroka_2 + '#' + v_ISIN;end;
+    if ~isBlank(v_CFI) then                          _rstroka_1 := _rstroka_1 + '#' + '..\security\security_classification_CFI'; _rstroka_2 := _rstroka_2 + '#' + v_CFI;end;
+    //FindShare( %Attributes, %Attributes_prop: list; %v_NumReg, %v_ISIN, %v_CFI: str)
+    // Передаем в FindShare два списка с кодами идентификации ценной бумаги. Список v_security_code всегда состоит из 1 записи.
+    SHARE :=_F_IXML150->FindShare( v_security_code, v_proprietary_security_code, v_NumReg, v_ISIN, v_CFI);
+    if (isBlank(SHARE)) then
+        TableInsert(LoLog, List('rekviz=SHARE', _rstroka_1, _rstroka_2, 'critic=' + str(critic_share),'Info=Не удается вычислить реквизит. Финансовый инструмент отсутствует в справочниках')); 
+    end;
+else
+    // Такой случай в штатной работе конечно не возможен - отсутствие тэге transaction должно обнаружится на этапе валидации документа XML согласно XSD схеме. 
+    TableInsert(LoLog, List('rekviz=SHARE', 'tags_descr=security', 'tags=', 'critic=' + str(critic_share),'Info=Не удается вычислить реквизит, так как отсутствует источник данных.')); 
+    BErrList := _F_REPORT->Add_Info(BErrList, 'Отсутствует обязательный элемент security.');
+end;
+
+// ----------- B_DATE  -------------------------------------------------------------------------------------------------------------- 
+// <statement_date><period><start_date>
+B_DATE := clear(date('31.12.1899'));
+if (v_statement_type in List('HOLD', 'ISSU', 'SECU', 'RHLD', 'RISS', 'RSEC')) then
+    dummy
+elsif v_statement_type in List('IFTR', 'TREM', 'TRCB') then
+    try
+        prom_date := date(v_statement_date_start_date);
+        B_DATE    := datetime(str(prom_date)+' 00:00:00');
+    except
+        TableInsert(LoLog, List('rekviz=B_DATE', 'tags_descr=..\statement_date\period\start_date', 'tags='+v_statement_date_start_date, 'critic=0','Info=Ошибка преобразования формата тэга-источника к типу DateTime'));
+    end;    
+end;
+
+// ----------- E_DATE  -------------------------------------------------------------------------------------------------------------- 
+// <statement_date><date>
+// <statement_date><period><end_date>
+// v_statement_date_date
+// v_time_beginning := null; v_time_ending    := null;
+
+E_DATE    := clear(date('31.12.1899'));
+time_tail := null;
+tag_tail  := '';
+if (v_statement_type in List('HOLD', 'ISSU', 'SECU', 'RHLD', 'RISS', 'RSEC')) then
+    if (v_time_ending = 'Yes') then        
+        time_tail := ' 23:59:59';
+        tag_tail  := 'ending';
+    elsif (v_time_beginning = 'Yes') then
+        time_tail := ' 00:00:00';
+        tag_tail  := 'beginning';
+    else 
+        time_tail := ' '+v_time_time;
+        tag_tail  := 'time';
+    end;
+    if ~isBlank(time_tail) then
+        try
+            prom_date := date(v_statement_date_date);
+            E_DATE    := datetime(str(prom_date)+time_tail);
+        except
+            TableInsert(LoLog, List('rekviz=E_DATE', 'tags_descr=..\statement_date\date#..\statement_time\'+tag_tail, 'tags='+v_statement_date_date+'#'+tag_tail, 'critic=1','Info=Ошибка преобразования формата тэга-источника к типу DateTime'));
+        end;        
+    else
+        TableInsert(LoLog, List('rekviz=E_DATE', 'tags_descr=..\statement_time\'+tag_tail, 'tags='+tag_tail, 'critic=1','Info=Невозможно вычислить реквизит, так как отсутствует содержимое тэга-источника либо сам тэг-источник'));        
+    end
+elsif (v_statement_type in List('IFTR', 'TREM', 'TRCB')) then
+    // E_DATE =<statement_date><period><end_date>+23:59:59 
+    if ~isBlank(v_statement_date_end_date) then
+        try
+            prom_date := date(v_statement_date_end_date);
+            E_DATE    := datetime(str(prom_date)+' 23:59:59');
+        except
+            TableInsert(LoLog, List('rekviz=E_DATE', 'tags_descr=..\statement_date\date#..\statement_time\'+tag_tail, 'tags='+v_statement_date_date+'#'+tag_tail, 'critic=1','Info=Ошибка преобразования формата тэга-источника к типу DateTime'));
+        end;        
+    else
+        TableInsert(LoLog, List('rekviz=E_DATE', 'tags_descr=..\statement_date\period\end_date', 'tags=', 'critic=1','Info=Невозможно вычислить реквизит, так как отсутствует содержимое тэга-источника либо сам тэг-источник'));
+    end;
+else
+    TableInsert(LoLog, List('rekviz=E_DATE', 'tags_descr=..\statement_type', 'tags='+v_statement_type, 'critic=1','Info=Невозможно вычислить реквизит, недопустимое содержимое тэга-источника'));        
+end;
+
+// ----------- G_TEXT   -------------------------------------------------------------------------------------------------------------- 
+G_TEXT := '';
+if ~isNull(v_add_info) then
+    G_TEXT := v_add_info;
+end;
+
+iif(%mute, dummy, DoProgress(2, 1, 1));
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                         Создание нового документа 
+//
+iif(%mute, dummy, DoProgress(3, 0, 1));
+iif(%mute, dummy, DoProgress(2, 1, 1));
+
+ID    := Gen_ID('Данные', 'OD_DOCS_ID_GEN' , 1);
+
+// Создание нового документа 
+D_CAT  := Extract('Данные', "select ID from OD_DOC_CATS where SYS_NAME='"+SYS_NAME+"'");
+
+// ---------------------------------------------------------------------------------------------
+// Проверка был ли ранее в этот опер.день обработан документ по такому же счету депо (CLIENT) 
+// с такими же номерами
+cc  := 0;
+rez := 0;
+DD1 :=clear(0); DD2:=clear(0); ErrStr := '';
+if (~isBlank(CLIENT)) then
+    // Проверка было ли в прошлом обработано поручение с таким же doc_num, doc_date, CLIENT с порождением экземпляра депозитарного поручения
+    cc := Extract('Данные', [select count(i.doc)
+                             from OD_IN_DOCS i
+                                 left join OD_DOCS di on di.KVIT = i.DOC
+                                 left join D_CLISER_ZA_SP z on z.DOC = di.ID
+                             where z.CLIENT = :DEPO and f_copy(Upper(i.THEIR_NUM), 1, f_RightPos('_', Upper(i.THEIR_NUM))-1) = :PNum and f_date(i.THEIR_DATE) = :PDate], 
+                        CLIENT, UpperCase(PNum), PData);
+    if (cc = 0) then
+        // Проверка было ли в прошлом обработано поручение с таким же doc_num, doc_date, CLIENT без порождением экземпляра депозитарного поручения.
+        // В этом случае след должен оставить ЗЖРД в котором прописаны doc_num, doc_date, CLIENT
+        cc := Extract('Данные', [select count(i.doc) as FIELD_0 
+                                 from OD_IN_DOCS i
+	                                 left join OD_STEPS st1 on st1.DOC = i.DOC and st1.S_TYPE = 0 and st1.ERR_CODE = 2004
+	                                 left join D_FILER f on f.DOC = st1.A_DOC 
+                                 where (f.ACCOUNT = :DEPO)
+                                         and dbo.f_copy(Upper(i.THEIR_NUM), 1, dbo.f_RightPos('_', Upper(i.THEIR_NUM))-1) = :PNum 
+                                         and dbo.f_date(i.THEIR_DATE) = :PDate], 
+                        CLIENT, UpperCase(PNum), PData);
+    end;
+                        
+    if (cc>0) then
+       TableInsert(LoLog, List('rekviz=','tags_descr=' ,'tags=' , 'critic=2','Info=В текущем операционном дне уже обрабатывался документ по счету депо '+_F_DEPO->GetClient(CLIENT) + ' с номером ' + str(Pnum)));
+    end;
+    if (~isBlank(FROM_FACE)) then
+        TableInsert(PhantomDoc, List('SYS_NAME=I_CLISER_Z_EXTR',
+                                 'NUM=' + NUM,
+                                 'CONTR_DATE='+str(date(D_DATE)),
+                                 'CLIENT='+str(CLIENT),
+                                 'PARTY_TYPE=',
+                                 'FROM_FACE='+FROM_FACE,
+                                 'RELATION='
+                ));
+        rez := _F_IXML150->Check_Affils(PhantomDoc, ErrStr, DD1, DD2);
+        if rez <> 0 then
+            // Выбранный инициатор не имеет полномочий для действия / тут бы вернуть -24
+            TableInsert(LoLog, List('rekviz=','tags_descr=' ,'tags=' , 'critic=2','Info=При распаковке вх.сообщения поручения № ' + str(%PPnum) + ' от ' + str(%PPData) + ' по счету депо '+ _F_DEPO->GetClient(CLIENT)+' не определены полномочия инициатора поручения: ' + ErrStr));
+        end;           
+    end;   
+end;
+// ---------------------------------------------------------------------------------------------
+//В лог.файл и в общее сообщение обо всех ошибка по ЕМАЙЛ , заноситься информация о том:
+//«при распаковке вх.сообщения поручения № от дата не определен обязательный реквизит формы поручения: «Имя реквизита»,  по информации из вх.документа: «значение тэга:<…>»
+
+// Готовим ErrList из лог-таблицы
+_F_IXML150.GenErrList.Info := List();
+ErrTag := _F_IXML150->GenErrList(LoLog, PNum, PData);
+ErrList := ErrList + _F_IXML150.GenErrList.Info;
+
+iif(%mute, dummy, DoProgress(2, 1, 1));
+
+// ---------------- Обновим поле 'От кого' у Входящего сообщения ----------
+//if ~isBlank(FROM_FACE) and ~isNull(%doc_id) then 
+if (FROM_FACE>=0) and ~isNull(%doc_id) then 
+  ExecSQL('Данные',[UPDATE OD_IN_DOCS set FROM_FACE=:FACE_FROM, THEIR_DATE=:D_DATE where DOC=:DOC], FROM_FACE, PData, %doc_id);
+end;
+// ------------------------------------------------------------------------------------------------------
+
+status := '';
+err    := 0;
+D_ID   := ID;
+if ErrTag=0 or ErrTag=1 then
+    // Либо нет ошибок, либо были не критические ошибки
+    status :='01';    
+    MainForm.UserDic.@commit; //Закрываем предыдущую транзакцию
+    MainForm.UserDic.@start;
+    try
+        i := 0;
+        while i<21 do
+            NUM := _f_doc->NextDocumentNum( SYS_NAME, D_DATE, DIRECTION );
+            try    
+                ExecSQL('Данные', [insert into OD_DOCS(ID, NUM, PARAM, D_CAT, D_DATE, STATE, DIRECTION, WHOS, KVIT)
+                                       values(:ID, :NUM, :PARAM, :D_CAT, :D_DATE, :STATE, :DIRECTION, :WHOS, :KVIT)],
+                           ID, NUM, PARAM, D_CAT, D_DATE, doc_state{STATE}, direction, WHOS, %DOC_ID);
+                exit;
+            except
+                if pos( 'Дублирование номера', Exception.text )>0 and i<19 then
+                    inc(i);
+                    ErrList := ErrList + 'Продублировался номер '+ str(NUM)+'. Попытка '+str(i)+'. Время '+str(now) + #13 +#10;
+                else 
+                    propagate;
+                end;
+            end;                         
+        end;                   
+        ExecSQL('Данные', [INSERT INTO D_CLISER_Z_EXTR( B_DATE, DOC, D_TYPE, E_DATE, PLAN_ID, CLIENT, SHARE, ISSUER, G_TEXT, REGULARITY )
+                               VALUES ( :B_DATE, :DOC, :D_TYPE, :E_DATE, :PLAN_ID, :CLIENT, :SHARE, :ISSUER,:G_TEXT,  :REGULARITY )],
+                         B_DATE, ID, D_TYPE, E_DATE, AccPlan, CLIENT, SHARE, ISSUER, G_TEXT, REGULARITY       
+                    );
+        ExecSQL('Данные', [insert into OD_IN_DOCS (DOC,FROM_FACE,PASS_KIND) values(:DOC, :FROM_FACE, :PASS_KIND)],
+                                 ID, FROM_FACE, PASS_KIND);
+        _f_doc->Link_Add(ID, %DOC_ID, 2006); // к входящему сообщению от порождённого им документа
+        ExecSQL('Данные', [update OD_DOCS set STATE=:ds, id=0 where ID=:gid], doc_state, ID);  //=============================================
+        if ErrTag = 0 then
+            err := 0;
+        else    
+            if not %Mute then
+                Warning('При разборе xml поручения сформирован список ошибок/предупреждений.'+#13+#10+#13+#10+ErrList);
+            end;
+            err := -1;
+        end;
+        MainForm.UserDic.@commit;  //Открываем транзакцию для следующего отчёта
+        MainForm.UserDic.@start;   //Открываем транзакцию для следующего отчёта
+        
+        //Report('x_T_REP');
+    except
+        MainForm.UserDic.@rollback;
+        //--------------------------
+        // регистрация входящего документа
+        MainForm.UserDic.@start;
+        ErrList := _f_report->Add_Info(ErrList, 'Ошибка при вставке и регистрации документа-поручения: '+Exception.Text);
+        D_ID    := %DOC_ID;
+        fSTATE := 0;
+        err     := 100; 
+        if not %Mute then
+          Warning('При вставке документов произошла непредвиденная ошибка. Сформирован список ошибок/предупреждений.'+#13+#10+#13+#10+ErrList);
+        end;
+        //return(err); //return(107) // Ошибка в обработке документа в связи с отказом пользователя от выполнения        
+    end; 
+    //-------------------------------
+else //ErrTag=2 и ErrTag = 3
+    MainForm.UserDic.@commit; //Закрываем предыдущую транзакцию
+    MainForm.UserDic.@start;
+    err  := 100;
+    D_ID := %DOC_ID;
+    fSTATE := 0;
+    // --------------------------
+    if not %Mute then
+        Warning('При разборе xml поручения сформирован список ошибок/предупреждений.'+#13+#10+#13+#10+ErrList);
+    end;
+    status:='03';
+    //NUM:='#';
+    //D_DATE:=str(now());
+    //Report('x_T_REP');
+    //return(err)
+end;
+
+try
+    //--------------------------
+    // регистрация входящего документа
+    if MyBase='SDP' then
+        //SDP_InDocFiler_Add(%DOC:int; %CONTRACT:int; %FUND:int; %CORR_FACE:int; %DOC_NUM:str; %DOC_DATE:datetime; %NUM:str; %D_DATE:datetime; %COMMENT, %MESS, %FILE_NAME, %CORR_NUM :str; %CORR_DATE:datetime;
+        // %PLACE:int; %ACCOUNT:int; %PASS_KIND:int; %RUBRICA :int; %CREATOR :int;%MUTE:int) 
+        _f_ixml150.SDP_InDocFiler_Add.STATE := fSTATE; 
+        _f_ixml150->SDP_InDocFiler_Add(D_ID, clear(0), clear(0), iif(FROM_FACE>=0,FROM_FACE, clear(0)), PNum, PData, %PPNum, %PPData, COMMENT, body, '', '' {%POutNum}, clear(now),
+                Clear(0), CLIENT, 8, RUBRICA, CREATOR, %Mute);
+    else
+        // InDocFiler_Add(%DOC:int; %CONTRACT:int; %FUND:int; %CORR_FACE:int; %DOC_NUM:str; %DOC_DATE:datetime; %NUM:str; %D_DATE:datetime; %COMMENT, %MESS, %FILE_NAME, %CORR_NUM :str; %CORR_DATE:datetime) :int
+        _F_DOC.InDocFiler_Add.PASS_KIND:= PASS_KIND; //ЭДО
+        _F_DOC.InDocFiler_Add.RUBRICA  := RUBRICA;
+        _F_DOC.InDocFiler_Add.CREATOR  := CREATOR;
+        _F_DOC.InDocFiler_Add.ACCOUNT  := CLIENT;
+        _F_DOC.InDocFiler_Add.MUTE     := %Mute;
+        _F_DOC->InDocFiler_Add(D_ID, clear(0), clear(0), iif(FROM_FACE>=0,FROM_FACE, clear(0)), PNum, PData, %PPNum, %PPData, COMMENT, body, '', ''{%POutNum}, clear(now));
+    end;
+    MainForm.UserDic.@commit;  // Фиксируеме транасакцию
+    MainForm.UserDic.@start;
+    // --------------------------
+    status:='03';
+    //NUM:='#';
+    //D_DATE:=str(now());
+    //Report('x_T_REP');
+except
+    MainForm.UserDic.@rollback;
+    MainForm.UserDic.@start;
+    ErrList := _f_report->Add_Info(ErrList, 'Ошибка при вставке Записи в журнале регистрации документов: '+Exception.Text);
+    if not %Mute then
+        Warning('Ошибка при вставке Записи в журнале регистрации документов:' + #13 + #10 + Exception.Text);
+    end;
+    err     := 100; 
+end;
+
+err;

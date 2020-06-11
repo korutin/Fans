@@ -26,8 +26,8 @@ elsif (%WithUpdate<>2) and IsNotFound then //проверка наличия ц�
      end;
   end;
   ID := Gen_ID( 'Данные', 'OD_VALUES_id_gen', 1 );
-  ExecSQL( 'Данные', 'insert into OD_VALUES ( ID,  SYSNAME,NAME,ISIN,MFU,B_DATE,V_TYPE,BASE_VAL) values  ( :ID, :SysName,:NAME,:ISIN,:MFU,:B_DATE,1,:BASE_VAL) ',
-         ID, SysName96,NAME96,ISIN96,MFU96,B_DATE96,BASE_VAL);
+  ExecSQL( 'Данные', 'insert into OD_VALUES ( ID,  SYSNAME,NAME,ISIN,MFU,B_DATE,V_TYPE,BASE_VAL) values  ( :ID, :SysName,:NAME,:ISIN,:MFU,:B_DATE,:V_TYPE,:BASE_VAL) ',
+         ID, SysName96, NAME96, ISIN96, MFU96, B_DATE96, V_TYPE96, BASE_VAL);
   if ~IsNull(BASE_VAL) then
      for 'ИсходныеДанные' select 'select B_DATE,E_DATE,SHIFT,ADD_PER,MIN_SUM,MAX_SUM from OD_UNITS where VAL = :VAL ORDER BY B_DATE'
      from %Value_id

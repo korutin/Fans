@@ -1,0 +1,341 @@
+//function Get_Restricted_reestr(%ACC_ID :int, %SHARE :int, %R_DATE:DateTime, %MX :int, %RMX :int, ZDL,ZDR,BLOCK,BEN_ZDR,BLOCK_5,BLOCK_CA,BLOCK_CL,ZALOG,BLIN :float; DogList :list; Obr_List:list ):float
+// %ACC_ID - Счет на котором ищем остаток %SHARE - ЦБ, остаток которой ищем на дату %R_DATE, по месту хранения %MX по разделу %RMX (для Fansy-REESTR два последних входных параметра означить значением 0)
+// ZDL - число заложенных ЦБ SHARE на счете ACC_ID но дату R_DATE  права у которых - у владельца счета
+// ZDR - число заложенных ЦБ SHARE на счете ACC_ID но дату R_DATE  права у которых - у залогодержателя (или только права на получение дохода)
+// BLOCK - число блокированных ЦБ SHARE на счете ACC_ID но дату R_DATE
+// BLOCK_CL - из них заблокированных клиентским поручением
+// BEN_ZDR - заклад (беннефициар - залогодержатель)
+// BLOCK_CA - заблокированных под корпоративные действия
+// ZALOG - всего бумаг в залоге и закладе
+// BLIN  - всего бумаг в аресте
+// Функция применима для Fansy-DEPO и для Fansy-REESTR
+//
+// Obr_List содержит столько же записей, как и DogList // Списки только по 30.5
+// формат Obr_List: ТИП обременения;Количество;SELF_ID контрагента;NUM основания;DATE основания;текст основания;ALT-код типа отнования;Тип блокировки;Причина блокировки
+// Тип обременения::{D_E_BLOCKS,D_E_ZALOGS_ZDL,D_E_ZALOGS_ZDR,BENEF_ZDR,BENEF_ZDL}
+// BENEF_ZDR - список по условиям залога, по которым доход получает залогодержатель
+// BENEF_ZDL - список по условиям залога, по которым доход получает залогодатель
+// D_E_ZALOGS_ZDL - список по условиям залога, не заклад
+// D_E_ZALOGS_ZDR - список по условиям залога в форме заклада
+// D_E_BLOCKS - список по условиям блокировок
+// BLIN - аресты
+// OTHR_CA - Корпоративные действия, кроме TEND-95, Ограничения по инструкции
+// TEND_95- Корпоративные действия? TEND_95, ограничения по документу КД
+// 
+
+var L_NAME, MZ, AMOUNT_1, REG_2, UZ_C_STATE, PLAN_ID, CAT_NAME, Z_NUMBER, UB_D_SUBTYPE, UB_C_STATE, ALT_CODE;
+
+//var tbl:=Table(NAME str, AMOUNT float);
+var CONTR_CNT, CONTRA_NAME, CONTRAGENT, KD_REF, CLASS, NUM_REG, i, j, s, t;
+var OPER_ID, OB_ID, OB_NUM, OB_D_DATE, B_TYPE_NAME, B_TYPE, B_NUM, B_DATE, DEPONENT, DEPO_ACC, CONDITION, OLD_CONDITION, ID_OP_R_INV_OBREM;
+var c_SYS_NAME;
+var ACNT, IS_R, C_STATE;
+DogList  := List();
+Obr_List := List();
+ZDL:= ZDR:= BLOCK:= BEN_ZDR:= BLOCK_5:= BLOCK_CA:= BLOCK_CL:= ZALOG:= BLIN:= 0.0;
+
+function 'AMOUNT_1_to_DogList(%N :str)' do
+   var i, S, NN, C:=ListCount(DogList);
+   if MyBase='SDP' and NUM_REG='10302307B' then NN:=NUM_REG+'_'+%N else NN:=%N end; //SDP для Банка Союз подставляет 6 нулей
+   while dec(C)>=0 do
+      S := ListGet(DogList,C);
+      if pos(NN+'=',S)=1 then exit end
+   end;
+   if C<0 then
+      ListAdd(DogList, NN+'='+AMOUNT_1)
+   else
+      i:= RightPos('=',S);
+      ListPut(DogList, C, NN+'='+(AMOUNT_1+itry(float(copy(S,i+1,100)),0)));
+   end;
+end;
+
+function 'AMOUNT_1_to_Obr_List(%N, %P :str)' do
+   var i, S, C:=ListCount(Obr_List);
+   while dec(C)>=0 do
+      S := ListGet(Obr_List,C);
+      if pos(%N+';',S)=1 and pos(';'+%P,S)=(length(S)-length(%P)) then exit end
+   end;
+   if C<0 then
+      ListAdd(Obr_List, %N+';'+ AMOUNT_1 +';'+%P)
+   else
+      i:= length(%N)+2;
+      ListPut(Obr_List, C, %N+';'+ (AMOUNT_1+itry(float(copy(S,i,pos(';'+%P,S)-i)),0)) +';'+%P);
+   end;
+end;
+
+if APPLICATION ='REESTR' then
+   // Obr_List содержит столько же записей, как и DogList 
+   // формат Obr_List: ТИП обременения;Количество;SELF_ID контрагента;Ссылка на условия;NUM основания;DATE основания;текст основания;ALT-код типа отнования;Тип блокировки;Причина блокировки
+   //                 'BENEF_ZDR'     ;AMOUNT    ;str(CONTRAGENT)    ;CONDITIONS       ;             ;              ;   Z_NUMBER    ;                      ;              ;                  ');
+   //                 0               ;1         ;2                  ;3                ;4            ;5             ;6              ;7                     ;8             ;9
+   //T_1_to_Obr_List( 'D_E_BLOCKS',               '0                 ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'BENEF_ZDR',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'BENEF_ZDR',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'D_E_ZALOGS_ZDL',           str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'BENEF_ZDL',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'D_E_BLOCKS',               '0                 ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;UB_D_SUBTYPE  ; UB_C_STATE         );
+   //T_1_to_Obr_List( 'BENEF_ZDR',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'BENEF_ZDR',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'D_E_ZALOGS_ZDL',           str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'BENEF_ZDL',                str(CONTRAGENT)+'  ;                 ;             ;              ;'+Z_NUMBER+'   ;                      ;              ;                   ');
+   //T_1_to_Obr_List( 'D_E_BLOCKS',               '0                 ;                 ;             ;              ;'+Z_NUMBER + ' ;                      ;UB_D_SUBTYPE  ; UB_C_STATE         );
+
+   // Тип обременения::{D_E_BLOCKS,D_E_ZALOGS_ZDL,D_E_ZALOGS_ZDR,BENEF_ZDR,BENEF_ZDL}
+
+    PLAN_ID:= _F_BUX->Get_Plan_By_SysName('REESTR');
+    for 'Данные'select [select b.SYS_NAME, sum(t.VALUE_*t.TYPE_) as AMOUNT, r.REG_2, c.SYS_NAME
+      from OD_BALANCES b
+        left join OD_RESTS r on r.BAL_ACC=b.ID and r.REG_1=:CLIENT and R.VALUE_ID=:SHARE
+        left join OD_TURNS t on t.REST=r.ID and t.WIRDATE>=:E_DATE
+        left join OD_DOCS d on d.ID = r.REG_2
+        left join OD_DOC_CATS c  on c.ID = D.D_CAT
+      where b.ACC_PLAN=:PLAN_ID and b.ACC_TYPE=2/*пассив*/ and b.IS_SYNT=0 and b.NUM_1=30
+      group by b.SYS_NAME, r.REG_2 , c.SYS_NAME
+      having sum(t.VALUE_*t.TYPE_) <>0
+      order by b.SYS_NAME]
+    from %ACC_ID, %SHARE, %R_DATE, PLAN_ID
+    into L_NAME, AMOUNT_1, REG_2 , c_SYS_NAME do
+      if L_NAME in List('30.1','30.3') then
+         /*if TableFind(tbl,'NAME=D_E_BLOCKS') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+         else TableInsert (tbl, List('NAME=D_E_BLOCKS', 'AMOUNT='+AMOUNT_1))
+         end;*/
+         BLOCK:= BLOCK + AMOUNT_1;
+      elsif L_NAME ='30.2'  then
+         /*if TableFind(tbl,'NAME=D_E_ZALOGS_ZDL') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+         else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDL', 'AMOUNT='+AMOUNT_1))
+         end;*/
+         ZDL  := ZDL   + AMOUNT_1;
+         ZALOG:= ZALOG + AMOUNT_1;
+      elsif L_NAME  ='30.4' then
+         /*if TableFind(tbl,'NAME=D_E_ZALOGS_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+         else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDR', 'AMOUNT='+AMOUNT_1))
+         end;*/
+         ZDR  := ZDR   + AMOUNT_1;
+         ZALOG:= ZALOG + AMOUNT_1;
+      elsif L_NAME='30.5' then // множественные обременения
+         if c_SYS_NAME = 'D_INV_OBREM' then //Заявление о блокировании
+
+            SelectSQL('Данные',[ select distinct D.ID, C.SYS_NAME
+            from PR_DOC_LINKS(:ID) L
+             left join OD_DOCS d on d.ID=L.L_DOC
+             left join OD_DOC_CATS c on c.ID=d.D_CAT
+             left join OD_DOC_STATES s on s.ID=d.STATE
+             where   L.L_CODE = 1],REG_2,ID_OP_R_INV_OBREM,C_SYS_NAME ,dummy  );
+             if C_SYS_NAME <> 'OP_R_INV_OBREM' then         // Операция Обременение обязательствами
+                continue
+             else
+             // Не вижу причин рассматривать возможность множественных блокировок по заяявлениям!!!
+                ExtractSQL ('Данные',[select NUM, D_DATE from OD_DOCS where ID=:DOC], REG_2, Z_NUMBER, OB_D_DATE);
+                // Зачем нужно это переприсвоение ?????? закоменчено 29.04.2020
+                // REG_2 := ID_OP_R_INV_OBREM;
+                
+                /*if TableFind(tbl,'NAME=D_E_BLOCKS') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                else TableInsert (tbl, List('NAME=D_E_BLOCKS', 'AMOUNT='+AMOUNT_1))
+                end;*/
+                BLOCK:= BLOCK + AMOUNT_1;
+                //UB_D_SUBTYPE :=_f_bux_op->GET_OP_VAL(REG_2,'D_TYPE');
+                UB_D_SUBTYPE :=_f_bux_op->GET_OP_VAL(ID_OP_R_INV_OBREM, 'D_TYPE');
+                if    UB_D_SUBTYPE=1 then AMOUNT_1_to_DogList('Блокировано по Заявлению: ' + Z_NUMBER +' от '+ date(OB_D_DATE));
+                elsif UB_D_SUBTYPE=3 then AMOUNT_1_to_DogList('Арестовано, первичн. док.: '+ Z_NUMBER +' от '+ date(OB_D_DATE)); // Бред. Не бывает арестов по заявлению Надо бы назвать донос?
+                end;                
+                AMOUNT_1_to_Obr_List('D_E_BLOCKS', '0;'+str(REG_2)+';;;'+Z_NUMBER+';;;');   // Выдадим наверх ссылку не на документ "Условия ", а на заявление (как там наверху это понять?!). Но успокаивает, что это ситуация фантастическая - блокировка по заявлению.
+             end;
+         else
+             CONTR_CNT := Extract('Данные',[select Count(*) from  D_E_CONTRACTS where DOC =:DOC],REG_2);
+             if CONTR_CNT =0 then
+                 // множественные обременения
+                 CONDITION     :=_F_BUX_OP->GET_OP_VAL(REG_2,'CONDITION');
+                 OLD_CONDITION :=_F_BUX_OP->GET_OP_VAL(REG_2,'OLD_CONDITION');
+                 MZ:= ';';
+
+                 for 'Данные' select [select DOC, SYS_NAME, NUM,D_DATE,DEPONENT, DEPO_ACC from E_LINK_DOCS(:DOC,2001)] // Квитовка операций по обременению и снятию обременений с "Условиями залога/ареста" в Fansy-REESTR (множественные обременения)
+                      from REG_2
+                      into OB_ID, CAT_NAME, OB_NUM, OB_D_DATE, DEPONENT, DEPO_ACC
+                 do
+                    if  CAT_NAME = 'D_E_ZALOGS' then
+                       if OB_ID = CONDITION then
+                         ExtractSQL('Данные',[select DC.C_STATE, DC.NUMBER, F.NAME,DC.CONTRAGENT
+                             from  D_E_CONTRACTS DC
+                             left join OD_FACES F on F.SELF_ID = DC.CONTRAGENT and F.LAST_FLAG = 1
+                             where DC.DOC =:DOC], OB_ID, UZ_C_STATE, Z_NUMBER, CONTRA_NAME, CONTRAGENT);
+
+                        if SetIn(UZ_C_STATE,3) and not SetIn(UZ_C_STATE,8) then
+                           /*if TableFind(tbl,'NAME=BENEF_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=BENEF_ZDR', 'AMOUNT='+AMOUNT_1));
+                           end;
+                           if TableFind(tbl,'NAME=D_E_ZALOGS_ZDL') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDL', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           if pos(';BEN_ZDR/'+REG_2+';', MZ)=0 then
+                              MZ := ';BEN_ZDR/'+REG_2 + MZ;
+                              BEN_ZDR:= BEN_ZDR + AMOUNT_1;
+                           end;
+                           if pos(';ZDL/'+REG_2+';', MZ)=0 then
+                              MZ := ';ZDL/'+REG_2 + MZ;
+                              ZDL:= ZDL + AMOUNT_1;
+                           end;
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + ', с передачей прав на получение дохода; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('BENEF_ZDR', str(CONTRAGENT)+';'+str(OB_ID)+';;;'+Z_NUMBER+';;;');
+
+                        elsif SetIn(UZ_C_STATE,8) = 1 then
+                           /*if TableFind(tbl,'NAME=BENEF_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=BENEF_ZDR', 'AMOUNT='+AMOUNT_1))
+                           end;
+                           if TableFind(tbl,'NAME=D_E_ZALOGS_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDR', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           if pos(';BEN_ZDR/'+REG_2+';', MZ)=0 then
+                              MZ := ';BEN_ZDR/'+REG_2 + MZ;
+                              BEN_ZDR:= BEN_ZDR + AMOUNT_1;
+                           end;
+                           if pos(';ZDR/'+REG_2+';', MZ)=0 then
+                              MZ := ';ZDR/'+REG_2 + MZ;
+                              ZDR:= ZDR + AMOUNT_1;
+                           end;
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + ' в форме заклада; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('BENEF_ZDR', str(CONTRAGENT)+';'+str(OB_ID)+';;;'+Z_NUMBER+';;;');
+
+                        else
+                           /*if TableFind(tbl,'NAME=D_E_ZALOGS_ZDL') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDL', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           if pos(';ZDL/'+REG_2+';', MZ)=0 then
+                              MZ := ';ZDL/'+REG_2 + MZ;
+                              ZDL:= ZDL + AMOUNT_1;
+                           end;
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + '; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('D_E_ZALOGS_ZDL', str(CONTRAGENT)+';;;;'+Z_NUMBER+';;;');
+                           AMOUNT_1_to_Obr_List('BENEF_ZDL', str(CONTRAGENT)+';'+str(OB_ID)+';;;'+Z_NUMBER+';;;');
+                        end;
+                        if pos(';ZALOG/'+REG_2+';', MZ)=0 then
+                           MZ := ';ZALOG/'+REG_2 + MZ;
+                           ZALOG:= ZALOG + AMOUNT_1;
+                        end;
+                       end; // OB_ID = CONDITION
+                    else
+                      // Блокировка
+                       if OB_ID = CONDITION then
+                          ExtractSQL('Данные',[select C_STATE, D_SUBTYPE, NUMBER from  D_E_CONTRACTS where DOC =:DOC],OB_ID, UB_C_STATE, UB_D_SUBTYPE,Z_NUMBER);
+                          /*if TableFind(tbl,'NAME='+CAT_NAME) then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                          else TableInsert (tbl, List('NAME='+CAT_NAME, 'AMOUNT='+AMOUNT_1))
+                          end;*/
+                          if UB_D_SUBTYPE=3 then // Арест
+                             if pos(';BLIN/'+REG_2+';', MZ)=0 then
+                                MZ := ';BLIN/'+REG_2 + MZ;
+                                BLIN:= BLIN + AMOUNT_1;
+                             end;
+                             AMOUNT_1_to_DogList('Арестовано, первичн. док.: ' + Z_NUMBER);
+                          else // if    UB_D_SUBTYPE=1 then
+                             if pos(';BLOCK/'+REG_2+';', MZ)=0 then
+                                MZ := ';BLOCK/'+REG_2 + MZ;
+                                BLOCK:= BLOCK + AMOUNT_1;
+                             end;
+                             AMOUNT_1_to_DogList('Блокировано, первичн. док.: '+ Z_NUMBER);
+                          end;
+                          AMOUNT_1_to_Obr_List('D_E_BLOCKS', '0;'+str(OB_ID)+';;;'+Z_NUMBER+';;'+str(UB_D_SUBTYPE)+';'+str(UB_C_STATE));
+                       end;  // OB_ID = CONDITION
+                    end; //  CAT_NAME = 'D_E_ZALOGS'
+                 end; // for
+             else
+                 // Простое обременение
+                 for 'Данные' select [select distinct iif_ss(SYS_NAME,'=','D_INV_OBREM', 'D_E_BLOCKS', SYS_NAME) from E_LINK_DOCS(:DOC,2001)]
+                    from REG_2
+                    into CAT_NAME
+                 do
+                    if CAT_NAME = 'D_E_ZALOGS' then
+                       ExtractSQL('Данные',[select DC.C_STATE, DC.NUMBER, F.NAME ,DC.CONTRAGENT
+                             from  D_E_CONTRACTS DC
+                             left join OD_FACES F on F.SELF_ID = DC.CONTRAGENT and F.LAST_FLAG = 1
+                             where DOC =:DOC],REG_2, UZ_C_STATE, Z_NUMBER, CONTRA_NAME, CONTRAGENT);
+
+                       if SetIn(UZ_C_STATE,3) and not SetIn(UZ_C_STATE,8) then
+                           /*if TableFind(tbl,'NAME=BENEF_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=BENEF_ZDR', 'AMOUNT='+AMOUNT_1));
+                           end;
+                           if TableFind(tbl,'NAME=D_E_ZALOGS_ZDL') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDL', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           ZDL    := ZDL     + AMOUNT_1;
+                           BEN_ZDR:= BEN_ZDR + AMOUNT_1;
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + ', с передачей прав на получение дохода; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('BENEF_ZDR', str(CONTRAGENT)+';'+str(REG_2)+';;;'+Z_NUMBER+';;;');
+                       elsif SetIn(UZ_C_STATE,8) = 1 then
+                           /*if TableFind(tbl,'NAME=BENEF_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=BENEF_ZDR', 'AMOUNT='+AMOUNT_1))
+                           end;
+                           if TableFind(tbl,'NAME=D_E_ZALOGS_ZDR') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDR', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           ZDR    := ZDR     + AMOUNT_1;
+                           BEN_ZDR:= BEN_ZDR + AMOUNT_1;
+
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + ' в форме заклада; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('BENEF_ZDR', str(CONTRAGENT)+';'+str(REG_2)+';;;'+Z_NUMBER+';;;');
+                       else
+                           /*if TableFind(tbl,'NAME=D_E_ZALOGS_ZDL') then TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                           else TableInsert (tbl, List('NAME=D_E_ZALOGS_ZDL', 'AMOUNT='+AMOUNT_1))
+                           end;*/
+                           ZDL:= ZDL + AMOUNT_1;
+                           AMOUNT_1_to_DogList('Заложено по договору '+ Z_NUMBER + '; залогодержатель: '+CONTRA_NAME);
+                           AMOUNT_1_to_Obr_List('D_E_ZALOGS_ZDL', str(CONTRAGENT)+';'+str(REG_2)+';;;'+Z_NUMBER+';;;');
+                           AMOUNT_1_to_Obr_List('BENEF_ZDL', str(CONTRAGENT)+';'+str(REG_2)+';;;'+Z_NUMBER+';;;');
+                       end;
+                       ZALOG:= ZALOG + AMOUNT_1;
+                    else
+                    // Блокировки
+                       ExtractSQL('Данные',[select C_STATE, D_SUBTYPE, NUMBER from  D_E_CONTRACTS where DOC =:DOC],REG_2, UB_C_STATE, UB_D_SUBTYPE,Z_NUMBER);
+                       // ===================================
+                       // Заполучить ID документа - операции обременения
+                       // ===================================
+                       //ID_OP_R_INV_OBREM := clear(0);
+                       //ALT_CODE          := clear(0);
+                       //SelectSQL('Данные',[ select distinct D.ID, C.SYS_NAME
+                       //                     from PR_DOC_LINKS(:ID) L
+                       //                          left join OD_DOCS d on d.ID=L.L_DOC
+                       //                          left join OD_DOC_CATS c on c.ID=d.D_CAT
+                       //                          left join OD_DOC_STATES s on s.ID=d.STATE
+                       //                     where   L.L_CODE = 2002], REG_2, ID_OP_R_INV_OBREM, C_SYS_NAME, dummy);
+                       //if (~isNull(ID_OP_R_INV_OBREM)) then
+                       //    ALT_CODE := _F_BUX_OP->GET_OP_VAL(ID_OP_R_INV_OBREM, 'B_TYPE');
+                       //end;
+                       /*if TableFind(tbl,'NAME='+CAT_NAME) then
+                         TableUpdate (tbl, List('AMOUNT='+Str(tbl._AMOUNT+AMOUNT_1)))
+                       else
+                         TableInsert (tbl, List('NAME='+CAT_NAME, 'AMOUNT='+AMOUNT_1))
+                       end;*/
+                       BLOCK:= BLOCK + AMOUNT_1;
+                       if    UB_D_SUBTYPE=1 then AMOUNT_1_to_DogList('Блокировано, первичн. док.: '+ Z_NUMBER );
+                       elsif UB_D_SUBTYPE=3 then AMOUNT_1_to_DogList('Арестовано, первичн. док.: ' + Z_NUMBER );
+                       end;
+                       AMOUNT_1_to_Obr_List('D_E_BLOCKS', '0;'+str(REG_2)+';;;'+Z_NUMBER + ';;'+str(UB_D_SUBTYPE)+';'+str(UB_C_STATE));
+                    end;
+                 end; // for
+             end;  //CONTR_COUNT = 0
+         end;
+      end;//  L_NAME='30.5'
+    end; // for
+end;
+
+/*ZDL:= ZDR:= BLOCK:= BLOCK_5:= 0.0;
+tbl.@first;
+while ~tbl.@EOF do
+   if    tbl._NAME='D_E_ZALOGS_ZDL' then ZDL    := tbl._AMOUNT
+   elsif tbl._NAME='D_E_ZALOGS_ZDR' then ZDR    := tbl._AMOUNT
+   elsif tbl._NAME='D_E_BLOCKS'     then BLOCK  := tbl._AMOUNT
+   elsif tbl._NAME='BENEF_ZDR'      then BEN_ZDR:= tbl._AMOUNT
+   elsif tbl._NAME='BLOCK_5'        then BLOCK_5:= tbl._AMOUNT
+   end;
+   tbl.@next
+end;*/
+i := ListCount(DogList);
+while dec(i)>=0 do
+   s := ListGet(DogList, i);
+   if Pos('10302307B_', s)=1 then t:=' 000 000'; s:=copy(s,11,1000) else t:='' end; // Кол-во Банка Союз для SDP
+   j := RightPos('=', s);
+   ListPut(DogList, i, '<b>'+_f_report->FloatAsAmount(itry(float(copy(s,j+1,100)),0))+t+'</b> шт. '+copy(s,1,j-1));
+end;
+//if BLOCK_5 <> 0.0 then - этого не надо показывать в общей куче - оно отдельно показывается SDP и не только
+//   ListAdd(DogList,'<b>'+ _f_report->FloatAsAmount(BLOCK_5)+ '</b> шт. Блокировано к поставке')
+//end;
+ZALOG + BLOCK + BLOCK_CA + BLIN; // Это неправильная сумма, но всё равно на неё никто не смотрит
+
