@@ -1,0 +1,31 @@
+//Inp_DateTime(%ds:int, %TagD:str, %TagT:str, Info:Str):DateTime
+//Возвращает дату и время из тегов %TagD и %TagT
+//SEG
+
+var D:=Clear(now), S, ST;
+
+Info:='';
+
+if IsBlank(_Metal_F->XML_FindField(%ds, %TagD)) then
+   Info:='Не найден тег <' + %TagD+'>';
+   return(D);
+end;
+
+S:=_Metal_F->XML_FieldByName(%ds, %TagD);
+
+if ~IsBlank(S) then 
+   if ~IsBlank(%TagT) then
+      if ~IsBlank(_Metal_F->XML_FindField(%ds, %TagT)) then
+         ST:=_Metal_F->XML_FieldByName(%ds, %TagT);
+         if ~IsBlank(ST) then
+            S:=S+'T'+ST;
+         end;
+      end;
+   end;
+   
+   D:=_F_XML->Get_DateTime(S); 
+else
+   Info:='Не заполнен тэг <' + %TagD+'>';
+end;
+
+D;

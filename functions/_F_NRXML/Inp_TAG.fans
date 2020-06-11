@@ -1,0 +1,18 @@
+//Inp_TAG(%ds:int, %tag:str; Info:str)
+//Чтение любого простого строкового тэга
+//SEG
+
+var s:=clear('');
+
+Info:='';
+
+if ~IsNull(_Metal_F->XML_FindField(%ds,%tag)) then
+   s:=_Metal_F->XML_FieldByName(%ds,%tag);
+   if IsBlank(s) then
+      Info:='Не заполнен тэг <'+%tag+'>';
+   end;
+else
+   Info:='Не найден тэг <'+%tag+'>';
+end;
+
+s;

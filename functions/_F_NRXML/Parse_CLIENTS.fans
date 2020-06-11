@@ -1,0 +1,212 @@
+//Parse_CLIENTS(%doc_id:int, %mute:int, ErrList)
+//Распаковать как информацию для открытия счета
+//SEG
+
+var WHOS, Info, BODY, x_main, x_data, x_NBR_CLIENTS, x_client, x_tradeAccountDepo, x_accountDepo,
+    outNum, outDate, name, surname, middlename, documentType, documentSeries, documentNumber,
+    documentSubdiv, documentOfficial, documentDate, birthDate, birthPlase, citizenshipCode, phone,
+    email, registrationAdress, adress, INN, SNILS, clientCode, trd_docNumber, trd_docDate, clearingCentre,
+    docNumber, docDate, FACE, DOC_TYPE:=Clear(0), STATE:=Clear(0), IS_ACC:=0, IS_TRD_ACC:=0, CLI_ORG,
+    RUBR;
+
+function 'GenDocs(%D_DATE:Date, %NUM:Str)' do
+var DOC, D_CAT, ACC_NAME, OPE_TYPE, STATE, FDOC;
+   if IsBlank(%D_DATE) then %D_DATE:=now; end;
+   DOC:=Gen_ID('Данные', 'OD_DOCS_ID_GEN' , 1);
+   D_CAT:=Extract('Данные', "select ID from OD_DOC_CATS where SYS_NAME='I_CLISER_OPEN'");
+   STATE := Extract( 'Данные', "select ID from OD_DOC_STATES where SYS_NAME='START'");
+   if IsBlank(%NUM) then
+      %NUM := _f_doc->NextDocumentNum('I_CLISER_OPEN', %D_DATE, 1);
+   end;
+   ACC_NAME:=name;
+   if IS_TRD_ACC then
+      if ~IsBlank(clearingCentre) then
+         ACC_NAME:=ACC_NAME+' '+clearingCentre;
+      end;
+      OPE_TYPE:=1;
+   else
+      OPE_TYPE:=0;
+   end;
+   
+   ExecSQL('Данные', [insert into OD_DOCS(ID, NUM, D_CAT, D_DATE, STATE, DIRECTION, WHOS, PARAM)
+                        values(:ID, :NUM, :D_CAT, :D_DATE, :STATE, :DIRECTION, :WHOS, :PARAM)],
+              DOC, %NUM, D_CAT, %D_DATE, STATE, 1, WHOS, RUBR);
+   ExecSQL('Данные', [insert into D_CLISER_OPEN(ACC_NAME, OPE_TYPE, INCOME_MOD, RELATION, FACE, DOC, O_MAIL_MOD, DOK_TYPE, DOK_NUM, DOK_BEG,CLI_ORG,SUBTYPE) 
+                        values (:ACC_NAME, :OPE_TYPE, 0, 0, :FACE, :DOC, 0, 41, :DOK_NUM, :DOK_BEG, :CLI_ORG, 1)],
+              ACC_NAME, OPE_TYPE, FACE, DOC, %NUM, Date(%D_DATE), CLI_ORG);
+   ExecSQL('Данные', [insert into OD_IN_DOCS(DOC,FROM_FACE,PASS_KIND) 
+                        values(:DOC,:FROM_FACE,:PASS_KIND)],
+              DOC, FACE, 8);
+   ExecSQL('Данные', [insert into OD_EXT_FACES(DATE_BIRTH, DOC, DOC_TYPE, EMAIL, HOME_ADR, INN, NAME, STATE, S_TYPE, DOC_DAT, DOC_NUM, DOC_PLACE, DOC_SER, PHONE, MAIL_ADR)
+                        values(:DATE_BIRTH, :DOC, :DOC_TYPE, :EMAIL, :HOME_ADR, :INN, :NAME, :STATE, 0, :DOC_DAT, :DOC_NUM, :DOC_PLACE, :DOC_SER, :PHONE, :MAIL_ADR)],
+              birthDate, DOC, DOC_TYPE, email, registrationAdress, INN, name, STATE, documentDate, documentNumber, documentOfficial, documentSeries, phone, adress);
+   _f_doc.InDocFiler_Add.PASS_KIND:=8;
+   FDOC:=_f_doc->InDocFiler_Add(DOC,Clear(0),Clear(0),FACE,Clear(''),Clear(now),Clear(0),Clear(now),Clear(''),clear(''),clear(''),outNum,outDate);                      
+              
+   _f_doc->Link_Add(DOC, %doc_id, 2006);
+   
+   _f_doc->Exec_Doc_Dir_BySysName(DOC, Clear(0), '0->1', %mute);
+end;    
+    
+ErrList:='';
+
+WHOS:=_Sys_Setings_F.OD_SETS._WHOS;
+BODY:=Extract('Данные', 'select BODY from D_IN_MESS where DOC=:D', %doc_id);
+
+x_main := _Metal_F->XML_Open(BODY, '');
+try
+   _F_NRXML->Inp_header(x_main, outNum, outDate);
+   ErrList := _F_NRXML->Add_Info(ErrList, _F_NRXML.Inp_header.Info);
+   
+   if x_main.?data then
+      x_data:=x_main._data;
+   end;
+   if IsBlank(x_data) then
+      ErrList := _F_NRXML->Add_Info(ErrList, 'В XML документе не найден тег data');
+   else   
+      if x_data.?NBR_CLIENTS then
+         x_NBR_CLIENTS:=x_data._NBR_CLIENTS;
+      end;
+   end;
+   
+   if IsBlank(x_NBR_CLIENTS) then
+      ErrList := _F_NRXML->Add_Info(ErrList, 'В XML документе не найден тег NBR_CLIENTS');   
+   else
+      if x_NBR_CLIENTS.?client then
+         x_client:=x_NBR_CLIENTS._client;
+      end; 
+   end;
+   
+   if IsBlank(x_client) then
+      ErrList := _F_NRXML->Add_Info(ErrList, 'В XML документе не найден тег client');
+   else
+      clientCode:=_F_NRXML->Inp_TAG(x_client, 'clientCode', Info);
+      ErrList := _F_NRXML->Add_Info(ErrList, Info);
+      
+      name:=_F_NRXML->Inp_TAG(x_client, 'name', Info);  ErrList := _F_NRXML->Add_Info(ErrList, Info);
+      surname:=_F_NRXML->Inp_TAG(x_client, 'surname', Info);  ErrList := _F_NRXML->Add_Info(ErrList, Info);
+      middlename:=_F_NRXML->Inp_TAG(x_client, 'middlename');
+      documentType:=_F_NRXML->Inp_TAG(x_client, 'documentType');
+      documentSeries:=_F_NRXML->Inp_TAG(x_client, 'documentSeries');
+      documentNumber:=_F_NRXML->Inp_TAG(x_client, 'documentNumber');
+      documentSubdiv:=_F_NRXML->Inp_TAG(x_client, 'documentSubdiv');
+      documentOfficial:=_F_NRXML->Inp_TAG(x_client, 'documentOfficial');
+      documentDate:=_F_NRXML->Inp_DateTime(x_client, 'documentDate', '');
+      birthDate:=_F_NRXML->Inp_DateTime(x_client, 'birthDate', '');
+      birthPlase:=_F_NRXML->Inp_TAG(x_client, 'birthPlase');
+      citizenshipCode:=_F_NRXML->Inp_TAG(x_client, 'citizenshipCode');
+      phone:=_F_NRXML->Inp_TAG(x_client, 'phone');
+      email:=_F_NRXML->Inp_TAG(x_client, 'email');
+      registrationAdress:=_F_NRXML->Inp_TAG(x_client, 'registrationAdress');
+      adress:=_F_NRXML->Inp_TAG(x_client, 'adress');
+      INN:=_F_NRXML->Inp_TAG(x_client, 'INN');
+      SNILS:=_F_NRXML->Inp_TAG(x_client, 'SNILS');
+      
+      if x_client.?tradeAccountDepo then
+         x_tradeAccountDepo:=x_client._tradeAccountDepo;
+      end;
+      if ~IsBlank(x_tradeAccountDepo) then
+         IS_TRD_ACC:=1;
+         
+         clearingCentre:=_F_NRXML->Inp_TAG(x_tradeAccountDepo, 'clearingCentre', Info);
+         ErrList := _F_NRXML->Add_Info(ErrList, Info);
+         
+         trd_docNumber:=_F_NRXML->Inp_TAG(x_tradeAccountDepo, 'documentNumber', Info);
+         ErrList := _F_NRXML->Add_Info(ErrList, Info);
+         
+         trd_docDate:=_F_NRXML->Inp_DateTime(x_tradeAccountDepo, 'documentDate', 'documentTime', Info);
+         ErrList := _F_NRXML->Add_Info(ErrList, Info);
+      end;
+      if x_client.?accountDepo then
+         x_accountDepo:=x_client._accountDepo;
+      end;
+      if ~IsBlank(x_accountDepo) then
+         IS_TRD_ACC:=1;
+         
+         docNumber:=_F_NRXML->Inp_TAG(x_accountDepo, 'documentNumber', Info);
+         ErrList := _F_NRXML->Add_Info(ErrList, Info);
+         
+         docDate:=_F_NRXML->Inp_DateTime(x_accountDepo, 'documentDate', 'documentTime', Info);
+         ErrList := _F_NRXML->Add_Info(ErrList, Info);
+      end;
+      
+      if ~IsBlank(ErrList) then
+         if ~%mute then
+            Warning('При разборе сообщения сформирован список ошибок/предупреждений:'+#13+#10+ErrList);
+         end;
+         return(100);
+      end;
+      
+      if IS_TRD_ACC then
+         try
+            CLI_ORG:=Extract('Данные', 'select SELF_ID from OD_FACES where MNEM=:M and LAST_FLAG=1', clearingCentre);
+            if IsBlank(CLI_ORG) then
+               ErrList:=_F_NRXML->Add_Info(ErrList, "В справочнике юр.лиц найден субъект по мнемонике "+clearingCentre);
+            end;
+         except
+            ErrList:=_F_NRXML->Add_Info(ErrList, "В справочнике юр.лиц найдено несколько субъектов с мнемоникой "+clearingCentre);
+         end;         
+      end;
+      try
+         RUBR:=Extract('Данные', "select ID from OD_USR_TABS where CODE='DEPO_KIND' and ALT='R01'");
+         if IsBlank(RUBR) then
+            ErrList:=_F_NRXML->Add_Info(ErrList, "В рубрикаторе категорий депозитарных поручений не найдено поручение по коду R01");
+         end;
+      except
+         ErrList:=_F_NRXML->Add_Info(ErrList, "В рубрикаторе категорий депозитарных поручений найдено несколько поручений по коду R01");
+      end;
+      
+      if ~IsBlank(ErrList) then
+         raise(ErrList);
+      end;
+      
+      name:=surname+' '+name+iif(IsBlank(middlename),'',' '+middlename);
+      FACE:=Extract('Данные', 'select F.FACE from OD_FACE_CODERS F where F.CODE=:CODE and F.CODER=:CODER', clientCode, WHOS);
+      if IsBlank(FACE) then
+      
+         if ~IsBlank(documentType) then
+            DOC_TYPE:=Extract('Данные', "select NUM from OD_SYS_TABS where CODE='FACE_DOCS' and DOP=:D", documentType);
+            if IsBlank(DOC_TYPE) then
+               ErrList:=_F_NRXML->Add_Info(ErrList, "В системном 'Тип документа субъекта' не найден тип документа по коду "+documentType);
+            end;
+         end;   
+         if ~IsBlank(citizenshipCode) then
+            try
+               STATE:=Extract('Данные', 'select ISO_DIG from OD_GOSLIST where ISO_LAT3=:C', citizenshipCode);
+               if IsBlank(STATE) then
+                  ErrList:=_F_NRXML->Add_Info(ErrList, "В системе не найдено государство по коду "+citizenshipCode);
+               end;
+            except
+               ErrList:=_F_NRXML->Add_Info(ErrList, "В системе найдено несколько государств по коду "+citizenshipCode);
+            end;            
+         end;
+         
+         FACE:=Gen_Id( 'Данные', 'OD_FACES_ID_GEN', 1 );
+         ExecSQL('Данные',
+               [insert into OD_FACES(ID, SELF_ID, LAST_FLAG, B_DATE, E_DATE, S_TYPE, NAME, DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT, DOC_PLACE, DOC_CODE,
+                                     DATE_BIRTH, STATE, PHONE, EMAIL, HOME_ADR, FACT_ADR, INN, OPER)
+                values(:ID, :SELF_ID, 1, :B_DATE, :E_DATE, 0, :NAME, :DOC_TYPE, :DOC_SER, :DOC_NUM, :DOC_DAT, :DOC_PLACE, :DOC_CODE,
+                       :DATE_BIRTH, :STATE, :PHONE, :EMAIL, :HOME_ADR, :FACT_ADR, :INN, :OPER)],
+            FACE, FACE, Date(now), '01.01.9999', name, DOC_TYPE, documentSeries, documentNumber, documentDate, documentOfficial, documentSubdiv,
+            birthDate, STATE, phone, email, registrationAdress, adress, INN, SNILS);
+                                  
+         ExecSQL('Данные', 
+                [insert into OD_F_FACES(FACE, BIRTHPLACE, PENSNUM)
+                 values(:FACE, :BIRTHPLACE, :PENSNUM)],
+             FACE, birthPlase, SNILS);
+             
+         ExecSQL('Данные', 'insert into OD_FACE_CODERS(FACE, COD, CODER) values(:FACE, :CODE, :CODER)', FACE, clientCode, WHOS);    
+             
+      end;
+       
+      if IS_TRD_ACC then GenDocs(trd_docDate, trd_docNumber); end;
+      if IS_ACC then GenDocs(docDate, docNumber); end;
+   end;
+   
+   _Metal_F->XML_Close;
+except
+   _Metal_F->XML_Close;
+   propagate;
+end;
+
+0;

@@ -1,0 +1,18 @@
+//Get_File_Name(%DIR:str, %CODE:Str, %NUM:str, %D_DATE:DateTime)
+//Возвращает наименование файла с путем
+//SEG
+
+var d, m, y, hh, mm, ss, ms, sDate, sName;
+
+function 'GetP(%P:int):str' do //преобразует часть даты/времени в 2-х символьную строку с префиксом 0, если необходимо
+var s;
+   s:=Str(%P);
+   if length(s)=1 then s:='0'+s; end;
+   s;
+end;    
+
+DecodeDate(%D_DATE, y, m, d);
+DecodeTime(%D_DATE, hh, mm, ss, ms);
+sDate:=Str(y)+GetP(m)+GetP(d)+'T'+GetP(hh)+GetP(mm)+GetP(ss);
+sName:=_f_report->FilenameValidate(%CODE+'_'+sDate+iif(IsBlank(%NUM),'','_'+%NUM), '');
+FIO->MakeFileName(%DIR, sName, 'xml');

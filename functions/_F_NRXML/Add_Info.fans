@@ -1,0 +1,20 @@
+//Add_Info(%MainInfo:Str, %SubInfo:str):str
+//Склеивает строки с переносом строки
+//Если строка %SubInfo уже есть в строке %MainInfo, то склеивания не происходит, а просто возвращается %MainInfo
+//SEG
+
+var S;
+
+if IsBlank(%MainInfo) and IsBlank(%SubInfo) then
+   S:='';
+elsif IsBlank(%SubInfo) then
+   S:=%MainInfo;
+elsif IsBlank(%MainInfo) then
+   S := %SubInfo;
+elsif Pos(%SubInfo, %MainInfo) = 0 then
+   S:=%MainInfo+#13+#10+%SubInfo;
+else 
+   S:=%MainInfo;
+end;
+
+S;

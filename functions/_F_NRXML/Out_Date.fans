@@ -1,0 +1,16 @@
+//Out_Date(%Tag:Str, %D:Date)
+//Вывод даты в тэг %Tag
+//SEG
+
+var y, m, d;
+
+function 'GetP(%P:int):str' do //преобразует часть даты/времени в 2-х символьную строку с префиксом 0, если необходимо
+var s;
+   s:=Str(%P);
+   if length(s)=1 then s:='0'+s; end;
+   s;
+end;
+
+DecodeDate(%D, y, m, d);
+
+Out('<'+%Tag+'>'+Str(y)+'.'+GetP(m)+'.'+GetP(d)+'</'+%Tag+'>');

@@ -1,0 +1,27 @@
+//Inp_header(%ds:int, outNum:Str, outDate:DateTime, Comment:Str, Info:Str)
+//Читает и разбирает тег "header"
+//SEG
+
+var x_header;
+
+outNum:=''; outDate:=Clear(now); Comment:='';
+Info:='';
+
+x_header:=_Metal_F->XML_FindField(%ds, 'header');
+
+if %ds.?header then
+   x_header:=%ds._header;
+else
+   x_header:=%ds;
+end;
+
+if x_header.?outNum then
+   outNum:=x_header._outNum;
+else
+   Info:=_F_NRXML->Add_Info(Info, 'В XML документе не найден тег outNum');
+end;
+
+outDate:=_F_NRXML->Inp_DateTime(x_header, 'outDate', '');
+Info:=_F_NRXML->Add_Info(Info, _F_NRXML.Inp_DateTime.Info);
+
+0;

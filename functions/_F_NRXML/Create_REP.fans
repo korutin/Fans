@@ -1,0 +1,21 @@
+//Create_REP(%doc_id:int, %Code:Str, %Mess:Str)
+//Формирование технического отчета об успешной распаковке или об ошибках при распаковке
+//SEG
+
+var DirExport, RegNum, RegDate, FileName, THEIR_NUM, THEIR_DATE;
+
+DirExport:=OptionsDlg.EXPORT_Dir.Text;
+RegNum:=Gen_ID( 'Данные', 'OD_DOCS_ID_GEN', 1 );
+RegDate:=Now;
+
+ExtractSQL('Данные', "select THEIR_NUM, THEIR_DATE from OD_IN_DOCS where DOC=:DOC", %doc_id, THEIR_NUM, THEIR_DATE);
+
+FileName:=_F_XML->Get_File_Name(DirExport, 'NBR', RegNum, RegDate);
+self.FileName:=FileName;
+
+out('<?xml version="1.0" encoding="UTF-8" ?>');
+out('<envelop>');
+  _F_NRXML->Out_Header_Link(THEIR_NUM, THEIR_DATE);
+out('</envelop>');
+
+self.@Close;

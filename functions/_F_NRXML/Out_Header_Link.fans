@@ -1,0 +1,10 @@
+//Out_Header_Link(%outNum:Str, %outDate:Date)
+//Вывод блока header с подблоком link
+//SEG
+
+out('<header>');
+  out('<link>');
+    _F_NRXML->Out_Date('outDate', %outDate);
+    _F_XML->Out_TAG('outNum', %outNum);
+  out('</link>');
+out('</header>');
