@@ -1,0 +1,41 @@
+// CreateTest_ACCOUNT_CHANGES_REQUEST
+// --------------------------------------------------------------------------------
+var x_changes := List();
+content :=
+[    <?xml version="1.0" encoding="UTF-8"?>
+     <ACCOUNT_CHANGES_REQUEST version="1">
+     	<version>1.5.0</version>    
+     	<header>
+             <doc_num>01-00401</doc_num>
+             <doc_date><date>2020-06-13</date></doc_date>
+     	</header>
+     	<associated_docs>
+     		<reflink>
+                 <ref_name>Анкета зарегистрированного лица</ref_name>
+     			<ref_doc_num>33</ref_doc_num>
+                 <ref_doc_date>2020-06-21</ref_doc_date>
+     		</reflink>
+     	</associated_docs>
+     	<account_dtls>
+     		<account_id>
+     			<id>SDP/NCC/00007777</id>
+     			<organization>SPED</organization>
+     		</account_id>
+     	</account_dtls>
+     	<account_holder>
+     		<party_id>
+     			<id>16469</id>
+     			<organization>SPED</organization>
+     		</party_id>
+     		<party_name>Общество с ограниченной ответственностью "Управляющая компания "КапиталЪ"</party_name>
+     	</account_holder>
+         <changes>
+             <change>
+                 <id>28</id>
+                 <data_NEW>01.49.1</data_NEW>                 <!-- Пчеловодство -->
+                 <change_ID_name>Код ОКВЭД</change_ID_name>
+             </change>
+         </changes>
+     </ACCOUNT_CHANGES_REQUEST>
+];
+content;
