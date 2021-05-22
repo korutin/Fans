@@ -1,0 +1,212 @@
+//Inp_Security_info_V3_t(%ds:int,%Way:str; Info:str, SHARE :int,  Sec_InfoList:List);
+//Разбирает тег  security  типа "security_info_V3_t"  Расширенная информация о ценной бумаге, содержащая референс корпоративного действия  по ценной бумаге
+//  а так же  security_info_V2_t !!!
+//SVS
+// Если бумагу не нашли в базе, вернем SHARE=0;
+
+//------------------------------------------------------------------------------------
+// Парамметры, которые могут быть возвращены (если они есть!) в списке   Sec_InfoList
+// формат списка: NAME=VALUE
+//S_CLASS=     Вид ценной бумаги = S_CLASS
+//CFI=         код  CFI
+//nominal=     номинад
+//ccy_code=    Код валюты номинала
+//reg_num=     Номер гос. регистрации
+//ISIN=        код ISIN
+//PSC=         proprietary_security_code код ЦБ
+//FIT=         Код вида финансового инструмента
+//S_TYPE=      Тип ценной бумаги
+//S_CAT=       Категория ценной бумаги по предоставляемым правам
+//------------------------------------------------------------------------------------
+
+
+//FIT, S_TYPE, S_CAT возвращаются не перекодированные. Чисто на всякий случай
+//security_classification, //Вид ценной бумаги = S_CLASS
+
+//BOND облигация   =2
+//SHAR акция       =1
+//MFUN пай         =10
+//RDRP российская депозитарная расписка = 7
+//MPPC ипотечный сертификат участия     = 10?
+
+//security_classification_CFI = CFI,
+
+//financial_instrument_type, //Код вида финансового инструмента = FIT
+
+// COMM Обыкновенные акции
+// CONV Конвертируемые облигации
+// CORP Корпоративные облигации
+// PREF Привилегированные акции
+// MFUN Инвестиционный пай
+
+//security_category, // Категория ценной бумаги по предоставляемым правам =S_CAT
+
+// ORON обыкновенные
+// PREF привилегированные
+//security_type, //Тип ценной бумаги  = S_TYPE
+// Что  бы такое под этим имелось ввиду?
+//nominal_value,                 =nominal
+//ccy_code, // код валюты номинала
+
+//state_reg_num,                 = reg_num      // Государственный регистрационный номер, номер правил ДУ ПИФ
+//ISIN_identifier,               = ISIN
+//proprietary_security_code      = PSC предполагается что на распаковке кодировщик всегда 'NSDR'
+
+
+var S_CLASS, CFI , nominal, ccy_code, reg_num, reg_date,  ISIN,PSC,FIT,S_TYPE,S_CAT, description, COAF, security_evt_id;
+
+var counter,j;
+var security_classification,financial_instrument_type,security_category,security_type;
+var x_nominal_value,x_proprietary_security_code,  x_security_evt_lnk_id;
+var issuer; //Организация, ведущая справочник идентификационных кодов, не зарегистрированная SWIFTом. NSDR – НКО НРД
+var Info1;// , corp_actn_evt_id,  corporate_action_code  , narrative;
+SHARE:= Clear(0);
+S_CLASS :=Clear(0);
+nominal := 0;
+Sec_InfoList :=List();
+J := 1;
+
+CFI := '';
+S_CAT := '';
+FIT := '';
+Info :='';
+Info1 :='';
+//----------------------------------------------------------------------------------
+if   %ds.?security_classification then
+    security_classification := %ds._security_classification;
+    if  security_classification = 'BOND' then
+        S_CLASS := 2;
+    elsif security_classification = 'SHAR' then
+        S_CLASS := 1;
+    elsif security_classification = 'MFUN' then
+        S_CLASS := 10;
+    elsif security_classification = 'RDRP' then
+        S_CLASS := 7;
+    elsif security_classification = 'MPPC' then
+        S_CLASS := 10;
+    end;
+else
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'В блоке security_info_V3_t  отсутствует обязательный  тэг <security_classification>'));
+end;
+if   %ds.?security_classification_CFI then
+    CFI := %ds._security_classification_CFI;
+end;
+
+if   %ds.?financial_instrument_type then
+    financial_instrument_type := %ds._financial_instrument_type;
+             // COMM -Обыкновенные акции / Common shares 
+             // CONV Конвертируемые облигации / Convertible bonds
+             //CORP  /Корпоративные облигации / Corporate bonds
+             // PREF Привилегированные акции / Preferred shares
+            // MFUN Инвестиционный пай / Investment unit
+    FIT := financial_instrument_type;                  //Пусть пока будет
+end;
+if   %ds.?security_category then
+    security_category := %ds._security_category;
+    S_CAT := security_category;          // Пусть будет
+end;
+if   %ds.?security_type then
+    security_type := %ds._security_type;
+    S_TYPE :=  security_type;            // Пусть будет
+end;
+if   %ds.?nominal_value then
+    x_nominal_value := %ds._nominal_value;
+    _F_NXML2->Inp_currency_and_amount_t(x_nominal_value,nominal ,ccy_code)
+end;
+
+if   %ds.?state_reg_num then
+   reg_num := %ds._state_reg_num;
+end;
+
+if   %ds.?state_reg_date then
+   reg_date := %ds._state_reg_date;
+end;
+
+if   %ds.?ISIN_identifier then
+    ISIN := %ds._ISIN_identifier;
+end;
+
+if   %ds.?proprietary_security_code then
+    x_proprietary_security_code := %ds._proprietary_security_code;
+    PSC := _F_NXML2->Inp_id_V02_t(x_proprietary_security_code,PSC,issuer);
+
+    if issuer = 'NSDR' then
+       SelectSQL('Данные',[SELECT c.SHARE FROM OD_VALUE_CODERS C join OD_FACES F on F.SELF_ID=C.CODER and F.LAST_FLAG=1 and F.MNEM ='НДЦ'  where c.CODE =:CODE],PSC,SHARE,inc(counter));
+       if counter>1 then
+          Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Найдено более одной ценной бумаги по коду НРД: '+PSC));
+       end;
+    end;
+end;
+if IsNull(SHARE) then
+   if ~IsBlank(ISIN) then
+      SelectSQL('Данные',[select ID from OD_VALUES where ISIN=:ISIN and V_TYPE=2],ISIN, SHARE, inc(counter));
+      if counter>1 then
+         Info := _f_report->Add_Info(Info,'Найдено более одной ценной бумаги по коду ISIN: '+ISIN);
+      end;
+   end;
+end;
+if IsNull(SHARE) then
+   if ~IsBlank(CFI) then
+      SelectSQL('Данные',[select ID from OD_VALUES where CFI=:CFI and V_TYPE=2],CFI, SHARE, inc(counter));
+      if counter>1 then
+          Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Найдено более одной ценной бумаги по коду CFI: '+ CFI));
+      end;
+   end;
+end;
+if IsNull(SHARE) then
+   if ~IsBlank(reg_num) then
+// Надо поправить под дату, если есть. Кроме того, бумаги стали историческими?
+      SelectSQL('Данные',[select ID from OD_SHARES where NUM_REG=:NUM_REG],reg_num, SHARE, inc(counter));
+      if counter>1 then
+          Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Найдено более одной ценной бумаги по коду гос. регистрации: '+reg_num ));
+      end;
+   end;
+end;
+if ~IsNull(SHARE) then
+   _F_REPORT->GetShare(SHARE);
+   if IsBlank(S_CLASS) then
+      S_CLASS:=_F_REPORT.GetShare.Class_id;
+   end;
+else
+   SHARE := 0;
+end;
+
+if   %ds.?description then
+// Описание / Description. Указывается краткое наименование ценной бумаги или иное описание ценной бумаги
+    description:= %ds._description;
+end;
+
+if ~IsBlank(S_CLASS)      then       ListAdd(Sec_InfoList, 'S_CLASS='+str(S_CLASS));    end;
+if ~IsBlank(nominal)      then       ListAdd(Sec_InfoList, 'NOMINAL='+str(nominal));    end;
+if ~IsBlank(ccy_code)     then       ListAdd(Sec_InfoList, 'CCY_CODE='+str(ccy_code));  end;
+if ~IsBlank(reg_num)      then       ListAdd(Sec_InfoList, 'REG_NUM='+str(reg_num));    end;
+if ~IsBlank(ISIN)         then       ListAdd(Sec_InfoList, 'ISIN='+str(ISIN));          end;
+if ~IsBlank(PSC)          then       ListAdd(Sec_InfoList, 'PSC='+str(PSC));            end;
+if ~IsBlank(FIT)          then       ListAdd(Sec_InfoList, 'FIT='+str(FIT));            end;
+if ~IsBlank(S_TYPE)       then       ListAdd(Sec_InfoList, 'S_TYPE='+str(S_TYPE));      end;
+if ~IsBlank(S_CAT)        then       ListAdd(Sec_InfoList, 'S_CAT='+str(S_CAT));        end;
+if ~IsBlank(description)  then       ListAdd(Sec_InfoList, 'DESC='+str(description ));  end;
+
+
+if %ds.?security_evt_lnk_id then
+// Референс корпоративного действия по ценной бумаге 
+//!!!!!!!!!!!!!!!!!!!!!!! Блок - множественный!!!
+    x_security_evt_lnk_id:= %ds._security_evt_lnk_id;
+    while not x_security_evt_lnk_id.@Eof do 
+        _f_NXML2->Inp_Events_linkage_V02_t( x_security_evt_lnk_id,   COAF, security_evt_id ); 
+        if ~IsBlank(COAF)           then       ListAdd(Sec_InfoList, 'COAF'+str(J)+ '='+str(COAF));            end;  // Все референсы нумеруем и пакуем в общий список
+        if ~IsBlank(security_evt_id)       then       ListAdd(Sec_InfoList, 'SEC_EVT_ID'+str(J)+ '='+str(security_evt_id));      end;
+        INC(J);
+        x_security_evt_lnk_id.@Next;
+    end;
+    // Info := _f_XML->Add_Info(Info,Info1);
+end;
+
+
+
+ //if ~IsBlank(corp_actn_evt_id)    then       ListAdd(Sec_InfoList, 'CORP_ACTN_EVT='+str(corp_actn_evt_id));        end;
+ //if ~IsBlank(narrative)                  then       ListAdd(Sec_InfoList, 'NARRATIVE='+str(narrative));      end;
+// if ~IsBlank(corporate_action_code)        then       ListAdd(Sec_InfoList, 'CORP_ACTION_CODE='+str(corporate_action_code));        end;
+
+
+ SHARE;

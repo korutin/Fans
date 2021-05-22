@@ -1,0 +1,92 @@
+//Inp_Legal_entity_details_t(%ds:int; %Way:str; %DOCS:int; FULL_NAME, POSTAL_NAME, MAIL_ADR, PARTAD_COUNTRY, PARTAD_INDEX, PARTAD_ADDRESS, LEGAL_ADDRESS:str;TYPE_LEGADDRESS:int; PHONE_FAX, EMAILS, BANK_PROB_RUB:List; DOC_FACE:int; Info:str)
+// -------------------------------------------------------------------------------------------
+// DOCS          := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+// EKS 11.2020
+var x_bank_prop_rub, x_address, x_legal_entity_address, x_legal_entity_contacts, x_legal_entity_id, x_postal_name,  Inf := '', W := '';
+var PAY_NAME, INN, ACC_RS, BANK_NAME, BANK_BIC, BANK_CITY, BANK_KORR, PAY_ADD_INFO, DOCS, issuer, scheme_name;
+var LEENI , IN_COUNTRY,  IN_DAT, SHORT_NAME;
+Info          := '';
+BANK_PROB_RUB := List();
+DOC_FACE      := clear(0);
+
+FULL_NAME:= POSTAL_NAME:= MAIL_ADR:= PARTAD_COUNTRY:= PARTAD_INDEX:= PARTAD_ADDRESS := LEGAL_ADDRESS := clear('');
+PAY_NAME:= INN:= ACC_RS:= BANK_NAME:= BANK_BIC:= BANK_CITY:= BANK_KORR:= PAY_ADD_INFO := null;
+TYPE_LEGADDRESS := clear(0);
+PHONE_FAX := EMAILS := List();
+// --------- Полное наименование лица ---------------------------------------
+if %ds.?legal_entity_name then
+    FULL_NAME := %ds._legal_entity_name;
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не найден обязательный элемент legal_entity_name'));
+end;
+
+// -----------------------------------------------------------------------------
+Inf := '';
+if %ds.?legal_entity_id then
+    W := _F_NXML2->Add_Way( %Way, 'organization_id');
+    x_legal_entity_id := %ds._legal_entity_id;
+    _F_NXML2->Inp_organization_id_t( x_legal_entity_id, W, %DOCS, DOC_FACE, LEENI , IN_COUNTRY,  IN_DAT, SHORT_NAME,  Inf);
+    if ~isBlank(Inf) then
+         Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, Inf));
+    end;
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не найден обязательный элемент legal_entity_id'));
+end;
+
+// ----------- Адрес местонахождения --------------------------------------------
+Inf := '';
+if (%ds.?legal_entity_address) then    
+    x_legal_entity_address := %ds._legal_entity_address;
+    _F_NXML2->Inp_Address_V2_t(x_legal_entity_address, 'legal_entity_address', TYPE_LEGADDRESS, LEGAL_ADDRESS, Inf);
+    if (~isBlank(Inf)) then
+         Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, Inf));
+    end;
+end;
+
+// ----------- Наименование лица и адрес для направления корреспонденции --------
+Inf := '';
+if (%ds.?postal_name) then
+    x_postal_name := %ds._postal_name;
+    W := _F_NXML2->Add_Way( %Way, 'postal_name');
+    if x_postal_name.?name then
+        POSTAL_NAME := x_postal_name._name;
+    else
+        Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Отсутствует обязательный элемент name'));
+    end;
+    
+    if x_postal_name.?address then
+        x_address := x_postal_name._address;
+        W         := _F_NXML2->Add_Way( %Way, 'address');
+        Inf := '';        
+        _F_NXML2->Inp_address_V03_t(x_address, W, MAIL_ADR, PARTAD_COUNTRY, PARTAD_INDEX, PARTAD_ADDRESS, Inf)
+    else
+        Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не найден обязательный элемент address'));
+    end;
+end;
+
+// -------------------------------------------------------
+Inf := '';
+if (%ds.?legal_entity_contacts) then
+    x_legal_entity_contacts := %ds._legal_entity_contacts;
+    //_F_NXML2->Inp_Party_contacts_V02_t(x_legal_entity_contacts, PHONE_FAX, EMAILS, Inf); 
+end;
+
+// -------------------------------------------------------
+Inf := '';
+if (%ds.?bank_prop_rub) then
+    x_bank_prop_rub := %ds._bank_prop_rub;
+    _F_NXML2->Inp_Bank_Prop_Rub_V02_t(x_bank_prop_rub, Inf, PAY_NAME, INN, ACC_RS, BANK_NAME, BANK_BIC, BANK_CITY, BANK_KORR, PAY_ADD_INFO, issuer,scheme_name);
+    ListAdd(BANK_PROB_RUB, 'PAY_NAME='+str(PAY_NAME)); 
+    ListAdd(BANK_PROB_RUB, 'INN='+str(INN));
+    ListAdd(BANK_PROB_RUB, 'ACC_RS='+str(ACC_RS));
+    ListAdd(BANK_PROB_RUB, 'BANK_NAME='+str(BANK_NAME));
+    ListAdd(BANK_PROB_RUB, 'BANK_BIC='+str(BANK_BIC));
+    ListAdd(BANK_PROB_RUB, 'BANK_CITY='+str(BANK_CITY));
+    ListAdd(BANK_PROB_RUB, 'BANK_KORR='+str(BANK_KORR));
+    ListAdd(BANK_PROB_RUB, 'PAY_ADD_INFO='+str(PAY_ADD_INFO));    
+    ListAdd(BANK_PROB_RUB, 'ISSUER='+str(issuer));        
+    ListAdd(BANK_PROB_RUB, 'SCHEME_NAME='+str(scheme_name)); 
+end;
+
+
+0

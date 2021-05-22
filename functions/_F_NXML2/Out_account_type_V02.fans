@@ -1,0 +1,37 @@
+//Out_account_type_V02(%Tag:str, %IsFormatXSD:Int, %account_type:Str, %narrative:Str, %Way:Str, Info:Str)
+//Вывод блока account_type_V02_t (Тип счета) в тэг %Tag
+//%IsFormatXSD   - тип счета в формате XSD?
+//%account_type  - тип счета (NUM классификатора DEPO_SUBTYPE)
+//%narrative     - текстовое описание типа счета
+//SEG
+
+var AccTypeCode;
+
+Info:='';
+%Way:=_F_NXML2->Add_Way(%Way, %Tag);
+
+Out('<'+%Tag+'>'); 
+
+  //Тип счета
+  if IsBlank(%account_type) then
+     Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не указан тип счета'));
+  else   
+     if %IsFormatXSD then
+        AccTypeCode:=%account_type;
+     else
+        AccTypeCode:=_F_NXML2->Set_account_type_ext_by_D_SUBTYPE(Int(%account_type))
+     end;
+     _F_XML->Out_TAG('account_type_code', AccTypeCode);
+  end;
+  
+  if IsBlank(%narrative) then
+     if AccTypeCode='13' then
+        Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не указано текстовое описание типа счета'));
+     end;
+  else
+     _F_XML->Out_TAG('narrative', %narrative);
+  end;
+
+Out('</'+%Tag+'>'); 
+
+0;

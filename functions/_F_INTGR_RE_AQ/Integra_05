@@ -1,0 +1,61 @@
+// Integra_05
+// --------------------------------------------------------------------------------------
+// Интеграционный тест для проверки формирования Уведомления о проведенное операции Передача паев.
+// Центральным объектом проверки является категория докуметов "Массовая выдача паёв"
+// Возвращаемое значение 0 - passed (тест прошел)
+//                       1 - не прошел
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed; 1 - error
+//                                      log      : список строк с ошибками
+// EKS 03.2021
+
+uses _QA;
+
+// $meta begin
+var  __tFace_OWNER01 , __tFace_OWNER02  ,   __tClient_OWNER02,    __tClient_OWNER01;
+
+var logK;
+var QA_CODE    := 'Integra_05';
+var EMI_UK, OWNER_01, OWNER_02, OWNER_CLI01_ID, OWNER_CLI02_ID, F_ID, SELF_ID, ISSUER, CLIENT_ID, NRD_ID, D_ID, PIF_ID, MASS_NUM, MASS_DATE, SHARE, DOL_ID, GIVECLI_ID, DPL, SF, RATE, R_DATE, SE, SE2;
+var GSSPIS;
+
+__tFace_OWNER01    := _TYPES->tFace;         OwnerSet(__tFace_OWNER01,      self.Caller.self );
+__tFace_OWNER02    := _TYPES->tFace;         OwnerSet(__tFace_OWNER02,      self.Caller.self ); 
+__tClient_OWNER02  := _TYPES->tClient;       OwnerSet(__tClient_OWNER02,    self.Caller.self );
+__tClient_OWNER01  := _TYPES->tClient;       OwnerSet(__tClient_OWNER01,    self.Caller.self );
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Создание Лица с указанием его реквизитов напрямую
+
+var BangMoment          := datetime('01.09.2020 09:00:00'),
+    CrOwnersMoment      := datetime('03.09.2020 10:31:34'),
+    issueMoment         := datetime('05.09.2020 11:12:11'),
+    Rest_Owner01        := 1.3,
+    Rest_Owner02        := 0.7;
+
+GIVECLI_ID := 369;
+
+GSSPIS := GS_Create;
+_F_INTGR_RE_AQ->A_setUp( BangMoment, GSSPIS ); 
+ISSUER := _QA->id(GS_VAL(GSSPIS, '__tFace_ISS'));
+NRD_ID := int(GS_VAL(GSSPIS, 'NRD_ID'));
+EMI_UK := int(GS_VAL(GSSPIS, 'EMI_UK'));
+
+// -----------------------------------------------------------------------------
+// Открыть счет Владельца
+OWNER_01       := _QA->InsFaceByAlias_t('IndvFrgnNeRez-02', Date(CrOwnersMoment), __tFace_OWNER01);
+OWNER_CLI01_ID := _QA->InsClientByAlias_t( 'OW-01', Date(CrOwnersMoment), OWNER_01, ISSUER, null, __tClient_OWNER01);
+
+// -----------------------------------------------------------------------------
+// Открыть счет второму владельцу
+OWNER_02       := _QA->InsFaceByAlias_t('JurRusVainstein', Date(CrOwnersMoment), __tFace_OWNER02);
+OWNER_CLI02_ID := _QA->InsClientByAlias_t( 'OW-01', Date(CrOwnersMoment), OWNER_02, ISSUER, null, __tClient_OWNER02);
+
+// Выдать паи владельцам
+SE := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, OWNER_CLI01_ID, SHARE, Rest_Owner01, '');
+SE2:= _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, OWNER_CLI02_ID, SHARE, Rest_Owner02, '');
+
+0

@@ -1,0 +1,24 @@
+//
+// CopyTab(%T_from, %T_in: int): int;
+// таблицы %T_from и %T_in должны иметь одинаковый набор полей (порядок не имеет значения)
+var LFields, tm, nmField, vlField;
+if isNull(%T_from) or isNull(%T_in) then
+    return(-1);
+end;
+if %T_in@recordcount>0 then
+    return(-1);
+end;
+
+LFields := TableRecordVal(%T_from);
+k       := 0;
+While k<ListCount(LFields) do
+    tm      := ListGet(LFields, k);
+    nmField := Token(tm, '=', 1);
+    vlField := Token(tm, '=', 2);
+    try
+        Eval('', [ %T_from._]+nmField+[:= %T_in._]+nmField+[;]);
+    except
+        return(-2);
+    end;
+    inc(k);
+End;

@@ -1,0 +1,141 @@
+// Parse_DISCLOSURE_REQUEST_qa01(%tt: int):int
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Parse_DISCLOSURE_REQUEST():AnyType
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+
+uses _QA, FIO; //, _F_NXML2_AQ;
+
+var err_c, Dt1, tStart, result, tEnd, fileNM, ErrList, VALUE_, path, z, Info, mess, plan_id, FB_CrMoment, SHR_CrMoment, Zach_Moment, CW_ID, FW_ID, D_ID;
+var logK;
+var QA_CODE := 'Parse_DISCLOSURE_REQUEST_qa01', F_ID, DEP_ID, ISS_ID, MESS_ID, CC_ID, SH_ID, SH_ID2;
+
+// $meta begin
+var __tFace_DEP  := _TYPES->tFace;
+var __tFace_CW   := _TYPES->tFace;
+var __tFace_ISS  := _TYPES->tFace;
+
+var __tClient_CC := _TYPES->tClient;
+var __tClient_CW := _TYPES->tClient;
+var __tShare_Sh  := _TYPES->tShare;
+var __tShare_Sh2 := _TYPES->tShare;
+// $meta end
+
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+TableClear(%tt);
+result   := _QA.PASSED;
+tStart   := now;
+Dt1      := date('01.09.2020');          
+FB_CrMoment  := date('15.02.2020');         // Момент создания АО Первый брокер
+SHR_CrMoment := date('15.02.2020');         // Дата регистрации бумаг RusOdnrRosFosNitro и RusPrefRosFosNitro
+Zach_Moment  := datetime('20.02.2020');     // Дата зачисления бумаг на пассивные счета.
+
+Info     := '';
+path     := 'C:\Users\User-Piter\Documents\Эпик НРД II\TESTING\';
+fileNM   := 'ЗапросНРДДепоненту_A.xml';
+try
+    // Создание окружения    
+    plan_id  := Extract('Данные', [select P.ID from OD_ACC_PLANS P where SYS_NAME = 'DEPO_BANK']);
+    DEP_ID   := _QA->InsOrLoadFaceByAlias_t('JurRusBrokFirst',   FB_CrMoment, __tFace_DEP);
+    FW_ID    := _QA->InsOrLoadFaceByAlias_t('JurFrgnDUTrustOne', FB_CrMoment, __tFace_CW);
+        
+    CC_ID    := _QA->InsDepoActByAlias_t(  'TL3332240009', Dt1, DEP_ID, clear(0), __tClient_CC);
+    CW_ID    := _QA->InsDepoPassByAlias_t( 'PsDU01', Dt1, FW_ID, __tClient_CW);
+    SH_ID    := _QA->InsShareByAliasD_t( 'RusOdnrRosFosNitro', SHR_CrMoment, __tFace_ISS, __tShare_Sh);
+    SH_ID2   := _QA->InsShareByAliasD_t( 'RusPrefRosFosNitro', SHR_CrMoment, __tFace_ISS, __tShare_Sh2);
+    ISS_ID   := _QA->id(__tFace_ISS);
+    // ----------------------------
+    D_ID:= _QA->Make_OP_INV_ZACH_json(AnsiToUTF8([
+                                                          {   "DD_TYPE"   : "Клиентское",
+                                                              "DD_NUM"    : "б/н" ,
+                                                              "DD_DATE"   : "]+str(date(Zach_Moment))+[",
+                                                              "SHARE"     : ] + str(SH_ID) + [,
+                                                              "AMOUNT"    : 500,
+                                                              "PLACE"     : "]+__tClient_CC._NUMBER+[",
+                                                              "D_NUM"     : "98015",
+                                                              "DEPO"      : ] + str(CC_ID) + [,
+                                                              "K_NUM"     : "98055",
+                                                              "MARKET"    : null ,
+                                                              "CONDITION" : null,
+                                                              "IS_REG"    : 0, 
+                                                              "TAX_R"     : 0,
+                                                              "B_TYPE"    : 40,
+                                                              "B_DATE"    : "] + str(date(Zach_Moment)) + ["  ,
+                                                              "B_NUM"     : "б/н",
+                                                              "IS_BLOCK"  : null,
+                                                              "WIR_DATE"  : "]+ str(Zach_Moment) +[",         
+                                                              "FROM_FACE" : ]+str(MyFace)+[,
+                                                              "COMMENT"   :   "Формирование баланса на счете ] + __tClient_CC._NUMBER + [",
+                                                          }]), Zach_Moment,  'START', clear(0));    
+    z       := _F_DOC->Exec_Doc_Dir_BySysName( D_ID, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось выполнить зачисление на счет '+__tClient_CC._NUMBER+'. Код ошибки:' + str(z)); end;
+    // ----------------------------
+    MESS_ID := _QA->gc(_F_NXML2_AQ->Gen_DISCLOSURE_REQUEST01_body);
+    //z       := _F_DOC->Exec_Doc_Dir_BySysName( MESS_ID, clear(0), 'UNIVERSUM', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Входящее сообщение. Код ошибки:' + str(z)); end;
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;
+end;
+breakpoint;
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария и проверка результата
+if (result <> _QA.CANCELED) then
+    try
+        // ------------------------------------------------------------------------
+        // Вызов тестируемой функции
+        VALUE_ := _F_NXML2->Parse_DISCLOSURE_REQUEST(MESS_ID, 0, ErrList);
+        err_c  := 0;
+        //err_c  := err_c + _QA->eq_ff(VALUE_, VALUE_et, 'ИмяТестируемойФункции.VALUE_', 'VALUE_et', s ); ListAdd(LOGK, s);
+        // Обработка результата так:
+        // result := iif(err_c>0, _QA.FAIL, _QA.PASSED);
+        // Или так:
+        // if err_c>0 then
+        //     result := _QA.FAIL;
+        //     // Вывод диагностики
+        //     ListAdd(LOGK, '    Inp_Person_dtls_t.Info=['+Info+']');
+        // else 
+        //     result := _QA.PASSED;
+        // end;        
+    except
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением. Exception [' + Exception.text + ']');
+        result := _QA.BROKEN;
+    end;
+end;
+
+// -------------------------------------- Post-condition : Удаляем окружение ----------------------------------------------
+if _F_NXML2_AQ.EnvDestroy = 1 then
+    err_c := 0;    
+    try
+        _QA->DelContext2(ErrList);
+    except
+        ErrList := ErrList + #13+#10+'Исключение во время удаление окружения.' + Exception.Text;
+    end;
+    if ~isBlank( ErrList ) then
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+    end;
+
+    if _QA->SafeDropShare(SH_ID)  = 1 then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' +_QA.SafeDropShare.mess);inc(err_c);end;
+    if _QA->SafeDropShare(SH_ID2) = 1 then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' +_QA.SafeDropShare.mess);inc(err_c);end;
+    if _QA->SafeDropClient(CC_ID) = 1 then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' +_QA.SafeDropClient.mess);inc(err_c);end;
+    if _QA->SafeDropFace(DEP_ID)  = 1 then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' +_QA.SafeDropFace.mess);inc(err_c);end;
+    if _QA->SafeDropFace(ISS_ID)  = 1 then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' +_QA.SafeDropFace.mess);inc(err_c);end;    
+end;
+
+// -------------------------------------- Оформляем результат --------------------------------------------------------------
+try
+    _QA->ResultRegistration(%tt, QA_CODE, result, logK, tStart, Now);
+except
+    raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+end;
+%tt._result;

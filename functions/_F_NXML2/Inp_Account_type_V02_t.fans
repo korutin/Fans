@@ -1,0 +1,21 @@
+// Inp_Account_type_V02_t(%ds:int, %Way:str; account_type_code:str; Acc_Type:int, dop:str,narrative : str, Info:str) :int;
+// ---------------------------------------------------------------------
+// account_type_code - код типа счета с точки зрения формата FCDR_2017_2
+// Acc_Type          - аналог типа счета в справочнике Fansy (-1 нет соответствующего fansy типа счета)
+// dop               - альтернативные торговые типы счетов, там где они могут быть
+// EKS 11.2020 ПРАВКА!!!!
+
+account_type_code := clear('');
+Acc_Type          := clear(0);
+Info := '';
+if  %ds.?account_type_code then
+    account_type_code := %ds._account_type_code;
+    Acc_Type :=   _F_NXML2->Get_Account_Type_By_Account_type_code_ext(account_type_code, dop);
+ //   if Acc_Type = -2 and not %ds.?narrative then
+ //       Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не обнаружен элемент narrative.Элемент narrative является обязательным при типе счета OTHR '));
+ //   end;
+end;
+if  %ds.?narrative then
+    narrative := %ds._narrative;
+end;
+Acc_Type;

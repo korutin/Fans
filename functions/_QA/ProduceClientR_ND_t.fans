@@ -1,0 +1,57 @@
+//ProduceClientR_ND_t(%ProfileClient_t, %Dt);
+// -----------------------------------------------------------
+// EKS 03.2021
+// Воспроизвести в таблицу аттрибуты лицевого счета типа "Лицевой счет номинального держателя"
+// Набор элементов в возвращаемой таблице в точности соответствует списку полей возвращаемых функцией _GenRequizClient
+// Тип счета - счет владельца
+var plan_id;
+try
+    _TYPES->CheckType(%ProfileClient_t, 'TClient');
+except
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->ProduceClientR_ND_t",
+             "mess"      : "]+Exception.text+["}]);
+end;    
+plan_id := Extract('Данные', [select P.ID from OD_ACC_PLANS P where SYS_NAME = 'REESTR']);
+%ProfileClient_t.@EDIT;
+//%ProfileClient_t._BAL_ACC=',
+%ProfileClient_t._NUMBER      := 'Н99100000';        // <String> в данном поле главное первая буква
+%ProfileClient_t._TYPE_       := 2;                  //:TYPE_ = 2 <Integer> 
+%ProfileClient_t._SUBTYPE     := 2;                  //:SUBTYPE = 102 <Integer>     Лицевой счет номинального держателя центрального депозитария
+%ProfileClient_t._FACE        := clear(0);           //:FACE = <Integer>          не заполняем, пусть заполняет вызывающий код
+%ProfileClient_t._RELATION    := 0;                  // 0 <Integer>
+%ProfileClient_t._PARENT      := clear(0);           //(null) <Integer>
+%ProfileClient_t._PLAN_ID     := plan_id;            // 12 <Integer>
+%ProfileClient_t._IS_TERM     := 'T';                // <FixedChar>
+%ProfileClient_t._IS_MANAGER  := 1;                  // <Integer>
+%ProfileClient_t._IS_VOICE    := 1;                  // <Integer>
+%ProfileClient_t._IS_PRIV     := 0;                  // <Integer>
+%ProfileClient_t._IS_SOV      := 0;                  // <Integer>
+%ProfileClient_t._IS_NZ       := 0;                  // <Integer>
+%ProfileClient_t._IS_BCLIENT  := 0;                  // <Integer>
+%ProfileClient_t._STATE       := 0;                  // <Integer>
+%ProfileClient_t._D_OPEN      := (Date(%Dt));                 // (null) <SQLTimeStamp>    не заполняем, пусть заполняет вызывающий код
+%ProfileClient_t._F_DATE      := clear(date('31.12.1899'));   //  
+%ProfileClient_t._D_CLOSE     := clear(date('31.12.1899'));   // (null) <SQLTimeStamp>    не заполняем, пусть заполняет вызывающий код
+%ProfileClient_t._Z_DATE      := clear(date('31.12.1899'));   // (null) <SQLTimeStamp>
+%ProfileClient_t._OPER        := clear(0);                    //??????? <Integer>         не заполняем, пусть заполняет вызывающий код
+%ProfileClient_t._NAME        := 'ЛИЦЕВОЙ Счет НД';  // <String>
+%ProfileClient_t._LINK_NUMBER := clear('');          // <String>
+%ProfileClient_t._INCOME_MOD  := 1;                  // <Integer>   Банковский перевод
+%ProfileClient_t._INCOME_ACC  := clear(0);           // (null) <Integer>
+%ProfileClient_t._INCOME_ADR  := clear('');          // (null) <String>
+%ProfileClient_t._INCOME_REC  := clear('');          // (null) <String>
+%ProfileClient_t._INCOME_FACE := clear(0);           // null - сам владелец <Integer>
+%ProfileClient_t._O_MAIL_MOD  := 0;                  // <Integer>   Не формировать выписки
+%ProfileClient_t._O_MAIL_ADR  := clear('');          // раз O_MAIL_MOD - не формировать, то и адрес пустой <String>
+%ProfileClient_t._I_MAIL_MOD  := 8;                  // 8 <Integer> Способ предоставления выписок - По системе ЭДО
+%ProfileClient_t._I_MAIL_ADR  := clear('');
+%ProfileClient_t._DD_DATE     := clear(date('31.12.1899'));  // <SQLTimeStamp>
+%ProfileClient_t._DD_NUM      := 'DOGUK-1';                  // <String>
+%ProfileClient_t._PLACE       := clear(0);                   // (null) <Integer>
+%ProfileClient_t._ISSUER      := clear(0);                   // (null) <Integer>
+%ProfileClient_t._TARIF       := clear('');                  // <String>
+//%ProfileClient_t._TRANSIT     :=;                          
+%ProfileClient_t._EXTRA_INT   := clear(0);                   // <Integer>
+%ProfileClient_t._EXTRA_TYPE  := clear(0);                   // <Integer>
+%ProfileClient_t.@POST;

@@ -1,0 +1,55 @@
+// TabletoJSON(%T:int):str
+// ----------------------------------------------------
+// Преобразует входящую таблицу %T к JSON тексту 
+// EKS 12.2020
+var S := '', del, si, k, field, typ, item;
+
+del := '';
+%T.@First;
+si := _QA->RawToList(%T,0);
+k  := 0;
+S  := '{';
+While k<ListCount(si) do
+    if k>0 then del := ','; end;
+    item  := ListGet(si, k);
+    field := Token( item, '=', 1);    
+    Eval('',[typ := type(%T._] + field + [)]);
+    if typ = 'String' then
+        S  := S + del + '"' + Token( item, '=',1) + '": "' + replace(Token(item, '=', 2), '"', '\"') + '"' + #13 + #10;
+    elsif (typ = 'Integer' or typ = 'Float') then
+        S  := S + del + '"' + Token( item, '=',1) + '": ' + Token(item, '=', 2) + #13 + #10;
+    else
+        dummy
+    end;
+    inc(k);    
+end;
+S := S + '}' + #13 + #10;
+%T.@Next;
+While ~%T.@EOF do
+    si := _QA->RawToList(%T, 0);
+    k   := 0;
+    S   := S + ',{' + #13 + #10;
+    del := '';
+    While k<ListCount( si ) do
+        if k>0 then del := ','; end;
+        item  := ListGet(si, k);
+        field := Token( item, '=', 1);
+        Eval('',[typ := type(%T._] + field + [)]);
+        //S := S + ',';
+        if typ = 'String' then
+            S  := S + del + '"' + Token( item, '=',1) + '": "' + replace(Token(item, '=', 2), '"', '\"') + '"' + #13 + #10;
+        elsif (typ = 'Integer'  or typ = 'Float') then
+            S  := S + del + '"' + Token( item, '=',1) + '": ' + Token(item, '=', 2) + #13 + #10;
+        else
+            dummy
+        end; 
+        inc(k);
+    end;
+    S   := S + '}'+ #13 + #10;    
+    // S := S + ["DEPO_1" : ] + str(%T._DEPO) + ',' +#13 +#10;
+    // S := S + ["NUMBER" : "] + str(%T._NUMBER) + '",' +#13 +#10;  
+    // S := S + ["BANK_P_NAME" : "] + str(%T._NUMBER) + '",' +#13 +#10;  
+    // S := S + ["FACE_INN" : "] + str(%T._NUMBER) + '",' +#13 +#10;   BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str);    
+    %T.@Next;
+End;
+S;

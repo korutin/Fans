@@ -10,21 +10,26 @@
 
 // Хочешь узнать структуру таблицы %Profile_t вызови _QA->GenRequizFace и в _QA._L2 получишь список полей с типами
 
-var  FACE_ID, FIELDS, _QA_OPER, x_meta, x_modes;
+var  FACE_ID, FIELDS, x_meta, x_modes, x_codes, x_bankProp, BDate;
 
-_QA_OPER := 186;
 FACE_ID  := clear(0);
 FIELDS   := List();
 
 x_meta   := %Profile_t.___tOMETA;
 if (LowerCase(x_meta._CLASS)<>'tface') then
-    raise('Ошибка: в таблице профиля передан не тип TFace, а какой-то другой');
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsFace_t",
+                  "mess" : "Ошибка: в таблице профиля передан не тип TFace, а какой-то другой"}]);
 end;
-
+x_codes    := %Profile_t.___tCode_CODES;
+x_bankProp := %Profile_t.___tBankProp_bProp;
 if (%Profile_t.@RECORDCOUNT=0) then
-    raise('Ошибка: в таблице профиля нет записей')
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsFace_t",
+             "mess"      : "Ошибка: в таблице профиля нет записей"}]);
 elsif (%Profile_t.@RECORDCOUNT=1) then
-    FIELDS := _QA->TableToList(%Profile_t, 0);
+    FIELDS := _QA->RawToList(%Profile_t, 0);
+    BDate  := %Profile_t._B_DATE;
     try
         ExecProc('API_INS_FACE', 'Данные', %Profile_t._S_TYPE, %Profile_t._B_DATE, FIELDS, FACE_ID);
         // Если есть виды деятельности - накидаем их в базу
@@ -34,45 +39,85 @@ elsif (%Profile_t.@RECORDCOUNT=1) then
             While ~(x_modes.@EOF) do
                 ExecSQL('Данные', [insert into OD_P_FACES( FACE, DIAL_MODE, NUM_LIC, BEG_LIC, END_LIC, PLACE_LIC)
                                         values (:FACE, :DIAL_MODE, :NUM_LIC, :BEG_LIC, :END_LIC, :PLACE_LIC)],
-                                                 FACE_ID, 
-                                                 x_modes._MODE, 
-                                                 x_modes._NUM_LIC, 
-                                                 x_modes._BEG_LIC, 
-                                                 x_modes._END_LIC, 
-                                                 x_modes._PLACE_LIC);
+                                                 FACE_ID, x_modes._MODE, x_modes._NUM_LIC, x_modes._BEG_LIC, x_modes._END_LIC, x_modes._PLACE_LIC);
                 x_modes.@NEXT;
             End;
         end;
         x_meta.@EDIT;
-        x_meta._ID := FACE_ID;
+        x_meta._ID    := FACE_ID;
+        x_meta._STAMP := now;
         x_meta.@POST;
     except
         x_meta.@EDIT;
         x_meta._ID := clear(0);
         x_meta.@POST;
-        propagate
+        raise([{ "placeType" : "Функция",
+                 "placeName" : "_QA->InsFace_t",
+                 "mess"      : "]+Exception.text+["}]);
+        //propagate
     end
 else
     TableOrder(%Profile_t, 'B_DATE', 'ASC');
+    BDate  := %Profile_t._B_DATE;
     %Profile_t.@FIRST;
-    FIELDS := _QA->TableToList(%Profile_t, 0);
+    FIELDS := _QA->RawToList(%Profile_t, 0);
     ExecProc('API_INS_FACE', 'Данные', %Profile_t._S_TYPE, %Profile_t._B_DATE, FIELDS, FACE_ID);
     %Profile_t.@NEXT;    
     While ~(%Profile_t.@EOF) do
-        FIELDS := _QA->TableToList(%Profile_t, 0);
+        FIELDS := _QA->RawToList(%Profile_t, 0);
         try
             ExecProc('API_UPD_FACE', 'Данные', FACE_ID, %Profile_t._B_DATE, FIELDS);
             x_meta.@EDIT;
-            x_meta._ID := FACE_ID;
+            x_meta._ID    := FACE_ID;
+            x_meta._STAMP := now;
             x_meta.@POST;
         except
             x_meta.@EDIT;
             x_meta._ID := clear(0);
             x_meta.@POST;
-            propagate
+            raise([{ "placeType" : "Функция",
+                     "placeName" : "_QA->InsFace_t",
+                     "mess"      : "]+Exception.text+["}]);                
+            //propagate
         end;
         %Profile_t.@NEXT;
     End;
 end;
+// ---------------------------------------------------------------------
+if ~isNull(x_codes) then
+    try
+        x_codes.@FIRST;
+        ExecSQL('Данные', [delete from OD_FACE_CODERS where FACE = :F], FACE_ID);
+        While ~x_codes.@EOF do            
+            ExecSQL('Данные', [insert into OD_FACE_CODERS(CODER, CODE, FACE) values(:D, :C, :F)], iif(isNull(x_codes._CODER), MyFace, x_codes._CODER), x_codes._CODE, FACE_ID);
+            x_codes.@NEXT;
+        End;
+    except
+        x_meta.@EDIT;
+        x_meta._ID := clear(0);
+        x_meta.@POST;
+        raise([{ "placeType" : "Функция",
+                 "placeName" : "_QA->InsFace_t",
+                 "mess"      : "Ошибка при вставке тикера лица (SELF_ID = ]+str(FACE_ID)+[) с точки зрения кодировщика ]+ str(x_codes._CODER) + [ ]+Exception.text+["}]);        
+        //propagate
+    end;        
+end;
+// ---------------------------------------------------------------------
+if (~isNull(x_bankProp)) then
+    if (x_bankProp.@RECORDCOUNT>0) then
+        x_bankProp.@FIRST;
+        While ~x_bankProp.@EOF do
+            try
+                _QA->InsBankProp_t(x_bankProp, BDate, FACE_ID);
+            except
+                raise([{ "placeType" : "Функция",
+                         "placeName" : "_QA->InsFace_t",
+                         "mess"      : "Ошибка при вставке тикера лица (SELF_ID = ]+str(FACE_ID)+[) с точки зрения кодировщика ]+ str(x_codes._CODER) + [ ]+Exception.text+["}]);                    
+            end;
+            x_bankProp.@Next;
+        End;
+    end;
+end;
+
 
 FACE_ID;

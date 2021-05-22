@@ -1,0 +1,142 @@
+// Inp_Person_id_t_qa01(%tt: int):int
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Inp_Person_id_t
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+
+uses _QA;
+
+var err_c, Dt1, tStart, result, tEnd, ErrList, VALUE_et, VALUE_, s, ttDOCS, STATE, NATIONALITY, DATE_BIRTH, BIRTHPLACE, DOC_FACE, Info,
+    pers_apart_PASP, pers_doc_num_PASP, person_id, person_info;
+var logK;
+var QA_CODE := 'Inp_Person_id_t_qa01', F_ID, SELF_ID;
+
+// $meta begin
+var __tFace_INDV := Table( B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str,
+                           EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int,
+                           DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str,
+                           PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int,
+                           CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str,
+                           OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str,
+                               __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str),
+                               __tCode_CODES Table(CODER int, CODE str, FACE int), 
+                               __tOMETA Table(ID int, STAMP datetime, CLASS str));
+
+
+var __tClient_CC :=Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, 
+                          IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, 
+                          INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, 
+                          DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str,
+                               __tAFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int, INCOME_ACC int, INCOME_FACE int, INCOME_REC str),
+                               __tOMETA Table(ID int, STAMP datetime, CLASS str));
+var ttDocs       :=Table(DOC_TYPE int, person_document_type_code str, narrative str, doc_num str, dtls_together str, dtls_apart_ser str, dtls_apart_num str, doc_date date, org str, place str);
+
+// $meta end
+
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+TableClear(%tt);
+result   := _QA.PASSED;
+tStart   := now;
+Dt1      := date('01.09.2020');
+
+try
+    // Создание окружения    
+    SELF_ID   := _QA->InsFaceByAlias_t('IndvRusRez-01', Dt1, __tFace_PP);
+    // Конструируем элемент типа organization_id_t
+    pers_apart_PASP   := Table( doc_ser str, doc_num str);
+    pers_doc_num_PASP := Table( doc_num str, dtls_together str, dtls_apart int);
+    person_id         := Table( person_document_type_code str, narrative str, peson_doc_num int, doc_date date, org str, place str);
+    person_info       := Table( person_id int, nationality str, birthdate date, birthplace str);
+    pers_apart_PASP.@APPEND;
+    pers_apart_PASP._doc_ser := __tFace_INDV._DOC_SER;
+    pers_apart_PASP._doc_num := __tFace_INDV._DOC_NUM;
+    pers_apart_PASP.@POST;
+    pers_doc_num_PASP.@APPEND;
+    pers_doc_num_PASP._doc_num       := null;
+    pers_doc_num_PASP._dtls_together := null;
+    pers_doc_num_PASP._dtls_apart    := pers_apart_PASP;
+    pers_doc_num_PASP.@POST;
+    
+    person_id.@APPEND;
+    organization_id._organization_code_type := 'OGRN';
+    organization_id._narrative              := '';
+    organization_id._org_doc_num            := org_doc_num_OGRN;
+    organization_id._doc_date               := __tFace_GOAL._OGRN_DATE;
+    organization_id._reg_org                := __tFace_GOAL._OGRN_PLACE;
+    organization_id.@POST;
+    organization_id.@APPEND;
+    organization_id._organization_code_type := 'STIC';
+    organization_id._narrative              := '';
+    organization_id._org_doc_num            := org_doc_num_STIC;
+    organization_id._doc_date               := __tFace_GOAL._DOC_DAT;
+    organization_id._reg_org                := __tFace_GOAL._DOC_PLACE;
+    organization_id.@POST;
+    
+    dummy
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;
+end;
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария и проверка результата
+if (result <> _QA.CANCELED) then
+    try
+        // ------------------------------------------------------------------------
+        // Вызов тестируемой функции
+        SELF_ID := _F_NXML2->Inp_Person_id_t( x_person_id, 'person_id', ttDOCS, STATE, NATIONALITY, DATE_BIRTH, BIRTHPLACE, DOC_FACE, Info );
+
+        err_c   := 0;
+        err_c   := err_c + _QA->eqNot_ff(SELF_ID, SELF_ID_et, 'Inp_Person_id_t_qa01.DOC_FACE', 'VALUE_et', s ); ListAdd(LOGK, s);
+        // Обработка результата так:
+        // result := iif(err_c>0, _QA.FAIL, _QA.PASSED);
+        // Или так:
+        if err_c>0 then
+            result := _QA.FAIL;
+             // Вывод диагностики
+             ListAdd(LOGK, '    Inp_Person_id_t.Info=['+Info+']');
+        else 
+            result := _QA.PASSED;
+        end;        
+    except
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением. Exception [' + Exception.text + ']');
+        result := _QA.BROKEN;
+    end;
+end;
+
+// -------------------------------------- Post-condition : Удаляем окружение ----------------------------------------------
+if _F_REESTR_AQ.EnvDestroy = 1 then    
+    try
+        _QA->DelContext2(ErrList);
+    except
+        ErrList := ErrList + #13+#10+'Исключение во время удаление окружения.' + Exception.Text;
+    end;
+    if ~isBlank( ErrList ) then
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+    end;
+
+    // ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], EMI_UK);
+    // ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], EMI_UK);
+    if ~isNull( SELF_ID ) then    
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], SELF_ID );
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], SELF_ID );
+    end;
+end;
+
+// -------------------------------------- Оформляем результат --------------------------------------------------------------
+try
+    _QA->ResultRegistration(%tt, QA_CODE, result, logK, tStart, Now);
+except
+    raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+end;
+%tt._result;

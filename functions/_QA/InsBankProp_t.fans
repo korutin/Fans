@@ -1,0 +1,58 @@
+//InsBankProp_t(%__tBankProp_P:int; %CrDate:Datetime; %FACE:int; Mess: str):int
+// ------------------------------------------------------------------------------------------------
+// Вставка счета в справочник Справочник счетов субъекта во внешних хранилищах
+// %__tBankProp_P - таблица с банковскими реквизитами (может быть сгенерировано вызовом _TYPES->tBankProp)
+// %FACE          - идентификатор владельца SELF_ID. Владелец уже должен быть создан в БД.
+//EKS 11.2019
+
+var FaceAcc_ID;
+var x_meta;
+var __tFace_Bank := _TYPES->tFace;
+var ACNT := clear(''),      BANK := clear(0),        FACE  := clear (0),  
+    A_TYPE := clear(0),     ACC_VAL := clear(0),     NAME  := clear(''),
+    ACNT_CORR := clear(''), S_TYPE := clear(0),      O_NUM := clear(''),
+    O_DATE := clear(date('31.12.1899')), C_DATE := clear(date('31.12.1899')),
+    LINK := clear(0),       DEPARTMENT := clear(''), DEPART_CITY := clear(''), 
+    IS_MAIN := clear(0),    PLACE := clear(0),       IS_POP := clear(0),     MARKET := clear(0);
+               
+FaceAcc_ID := Gen_ID( 'Данные', 'OD_FACE_ACCS_ID_GEN', 1 );
+if (~isBlank(%__tBankProp_P._BANK_CODE)) then
+    // SelectSQL('Данные', [ SELECT f.self_id 
+    //                       FROM od_faces f
+    //                           LEFT JOIN od_face_coders fc on fc.FACE = f.SELF_ID
+    //                       WHERE f.LAST_FLAG = 1 and UPPER(TRIM(fc.CODE)) = :C and fc.CODER = :CODER], Trim(UpperCase(%__tBankProp_P._BANK_CODE)), MyFace, BANK, exit);
+    BANK := _QA->InsOrLoadFaceByAlias_t(%__tBankProp_P._BANK_CODE, %CrDate, __tFace_Bank);
+else
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsBankProp_t",
+             "mess"      : "Ошибка при вставке банковских реквизитов. В справочниках нет банка с кодом ]+ str(%__tBankProp_P._BANK_CODE) + ["}]);
+end;
+try 
+    ExecSQL('Данные',[ insert into OD_FACE_ACCS ( ID,  ACNT,  BANK,  FACE,  A_TYPE,  ACC_VAL,  NAME,  S_TYPE, O_NUM,  O_DATE,  C_DATE,  DEPARTMENT,  DEPART_CITY,  IS_MAIN,  PLACE,  IS_POP,  MARKET)
+                                         values (:ID, :ACNT, :BANK, :FACE, :A_TYPE, :ACC_VAL, :NAME, :S_TYPE, :O_NUM,:O_DATE, :C_DATE, :DEPARTMENT, :DEPART_CITY, :IS_MAIN, :PLACE, :IS_POP, :MARKET)],
+                FaceAcc_ID, 
+                %__tBankProp_P._ACNT, 
+                BANK, 
+                %FACE, 
+                %__tBankProp_P._A_TYPE, 
+                %__tBankProp_P._ACC_VAL, 
+                %__tBankProp_P._NAME, 
+                %__tBankProp_P._S_TYPE, 
+                %__tBankProp_P._O_NUM, 
+                %__tBankProp_P._O_DATE, 
+                %__tBankProp_P._C_DATE, 
+                %__tBankProp_P._DEPARTMENT, 
+                %__tBankProp_P._DEPART_CITY, 
+                %__tBankProp_P._IS_MAIN, 
+                %__tBankProp_P._PLACE, 
+                %__tBankProp_P._IS_POP, 
+                %__tBankProp_P._MARKET);
+    %__tBankProp_P.@EDIT;
+    %__tBankProp_P.___bs_ID := FaceAcc_ID;
+    %__tBankProp_P.@POST;
+except
+    %__tBankProp_P.@EDIT;
+    %__tBankProp_P._bs_ID := clear(0);
+    %__tBankProp_P.@POST;   
+end;
+FaceAcc_ID;

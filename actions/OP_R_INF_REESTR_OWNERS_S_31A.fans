@@ -1,0 +1,213 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// OP_R_INF_REESTR_OWNERS_S_31A      - Данные о владельцах паёв для УК, чтобы помочь им сформировать ОКУД 0420504 [Sintegro-Style]
+// Форма 0420504 для загрузки в Синтегро по новому шаблону с августа 2020
+// EKS 07.2020
+
+uses _f_report, _f_xbrl;
+var B_DOC, B_REP, E_REP, d, c, Prev_Date, k, ExistDocs:=List(), OTV_DATE, FIO_OTV_UK, DOL_OTV_UK, TEL_OTV_UK;
+
+ET       := Table(I_OWN str, S_NAME str, S_TYPE int, S_ADR str, S_STATE str, DIG_STATE str, S_OGRN str, F_REQ_C str, S_AMOUNT float);
+POT      := Table( NAME_PO str, FIO_OTV_PO str, DOL_OTV_PO str, TEL_OTV_PO str);
+E_DATE   :=d_operation._R_DATE;
+OTV_DATE :=d_operation._D_DATE;
+
+_f_report.AddInfo.Info := '';
+
+/////////////////////////////////////////////////
+//Поиск предыдущей отчетной XBRL даты для 0420504
+function 'GetPrevReportDate(%d):date' do
+  var eps, norm, dd, PrevDate, m:=month(%d), y:=year(%d);
+  if m>1 then 
+    m:=m-1 
+  else 
+    y:=y-1; m:=12 
+  end;
+  dd:=DaysPerMonth(y, m);
+  PrevDate:=EncodeDate(y,m,dd);
+
+  norm := date(_F_BUX->Next_Date_By_Delta(PrevDate,0,1));
+  if (norm <> PrevDate) then  
+    //стоим на выходном/праздничном
+    Eps:=date(_F_BUX->LastWorkDate(PrevDate))-1;
+  else 
+    Eps:=PrevDate;
+  end;
+  return(eps);  
+end;
+
+/////////////////////////////////////////////////
+//Поиск предыдущей отчетной XBRL даты для 0420504
+function 'InsEmptyStr(%ta:int)' do
+    TableInsert(%ta, List('I_OWN=Открытый' , 'S_NAME=', 'S_TYPE=', 'S_ADR=', 'S_STATE=', 'DIG_STATE=' , 'S_OGRN=', 'F_REQ_C=', 'S_AMOUNT='));
+end;
+
+APPL_ID := self;
+SelectSQL('Данные', 
+  [select NUM_LIC, BEG_LIC from OD_P_FACES 
+   where FACE=:F and DIAL_MODE=19 and NUM_LIC is not null and BEG_LIC<=:D and (END_LIC is null or END_LIC>:D)],
+  d_operation._ISSUER, E_DATE, E_DATE, LIC_NUM, LIC_DATE, exit );
+ID_PIF  := copy(LIC_NUM,1,4);               //Приставку PIF убрали по просьбе ОСД (заявка 4881)
+LIC_NUM := copy(LIC_NUM, 1, 4);             //Отрезаем 4 цифры из номер лицензии
+
+_F_REPORT->GetUFace(d_operation._ISSUER, E_DATE);
+FIO1_PIF := _F_REPORT.GetUFace.FIO_1;
+OKPO_PIF := _F_REPORT.GetUFace.OKPO;
+
+_f_pif->GetFond(d_operation._ISSUER, E_DATE);
+if ~isNull(_f_pif.GetFond.COMPANY) then
+ FN_COMPANY:=_f_report->GetUFace(_f_pif.GetFond.COMPANY, E_DATE);
+ SelectSQL('Данные', 
+       [select NUM_LIC, BEG_LIC 
+        from OD_P_FACES 
+        where FACE=:F and DIAL_MODE=3 and NUM_LIC is not null and BEG_LIC<=:D and (END_LIC is null or END_LIC>:D)],    //DIAL_MODE=3 доверительное управление имуществом       
+    _f_pif.GetFond.COMPANY, E_DATE, E_DATE, LIC_NUM_COMPANY, LIC_DATE_COMPANY, exit );
+ _f_report->GetUFace(_f_pif.GetFond.COMPANY, E_DATE);
+ FIO1_UK := _f_report.GetUFace.FIO_1;
+ DOL1_UK := _f_report.GetUFace.DOL_1;
+ FIO_OTV_UK := _f_report.GetUFace.FIO_OTV;
+ DOL_OTV_UK := _f_report.GetUFace.DOL_OTV;
+ TEL_OTV_UK := _f_report.GetUFace.TEL_OTV;
+else 
+ message('Не задана управляющая компания фонда');
+end;
+// ----------------------------------------------------
+// Всё об ответственном лице осуществляющим ведение реестры
+_f_report->GetFace(MyFace, OTV_DATE);
+_f_report->GetUFace(MyFace, OTV_DATE);     //01.03.2018 Подписанта берем на дату создания документа, а не фиксацию списка - желание ОСД
+FIO_OTV      := _f_report.GetUFace.FIO_OTV;
+FULLNAME_OTV := _f_report.GetUFace.full_name;
+OGRN_OTV     := _f_report.GetUFace.OGRN;   
+INN_OTV      := _f_report.GetFace.INN;
+
+// ---------------------------------------------------------------------------
+// Спросим за ответсвенных за предметную область лице
+//Table( NAME_PO str, FIO_OTV_PO str, DOL_OTV_PO str, TEL_OTV_PO str);
+TableClear(POT);
+TableInsert(POT, List('NAME_PO=Отчет по форме ОКУД0420504',
+                      'FIO_OTV_PO='+FIO_OTV_UK,
+                      'DOL_OTV_PO='+DOL_OTV_UK,
+                      'TEL_OTV_PO='+TEL_OTV_UK
+                      ));
+   
+PREV_DATE:= GetPrevReportDate(d_operation._R_DATE);
+//E_DATE:=date(E_DATE);      
+SelectSQL('Данные',
+   [select f_Date(v2.VAL), d.ID
+    from OD_DOCS d
+     left join OP_FIELDS f1 on f1.OP=d.D_CAT and f1.AS_NAME='ISSUER'
+     left join OP_FIELDS f2 on f2.OP=d.D_CAT and f2.AS_NAME='R_DATE'
+     left join OP_FIELDS f3 on f3.OP=d.D_CAT and f3.AS_NAME='B_TYPE'
+     left join D_OP_VAL v1 on v1.DOC=d.ID and v1.DESCR=f1.ID
+     left join D_OP_VAL v2 on v2.DOC=d.ID and v2.DESCR=f2.ID
+     left join D_OP_VAL v3 on v3.DOC=d.ID and v3.DESCR=f3.ID
+    where f_Date(v2.val)=:E and d.D_CAT=:C and f_AsInteger(v1.VAL)=:I and f_AsInteger(v3.VAL) in (-1,86)    /*-1 - Указание Банка России № 4323-У от 24.03.2017г.; 86 - Указание Банка России*/
+    order by 1 desc],
+   Prev_Date, d_operation._D_CAT, d_operation._ISSUER, 
+   B_DATE, B_DOC, ListAdd(ExistDocs,B_DOC));
+
+c:=ListCount(ExistDocs);
+if (c>1) then
+     //more than one document, give the choice to operator
+     //B_DOC:=ListGet(ExistDocs,0);
+     if not _cond_body_f->Select_in_Box('Данные', [select D.ID, D.NUM_DATE
+                                                   from OD_DOCS D 
+                                                   where D.ID in(]+replace(ExistDocs,#13+#10,',')+[) and D.WHOS=]+MyFace+[ and D.STATE<>0], 
+              list('NUM_DATE=Номер и дата документа;25'), 'ID', 'Выберите документ.', '(документ не выбран)', 'Найдено несколько документов на предыдущую отчетную дату') then 
+         //return(-1) //Отказ операциониста от выполнения отчёта
+         Assert( not Question('Не выбраны данные за предыдущий отчетный период. Прервать формирование отчета?'), 'Формирование отчета прервано операционистом' );
+     end; 
+     B_DOC := _cond_body_f.Select_in_Box.ID;     
+     if (isBlank(B_DOC)) then
+         Assert( not Question('Не выбраны данные за предыдущий отчетный период. Прервать формирование отчета?'), 'Формирование отчета прервано операционистом' );
+     end
+elsif (c=1) then
+     //found just a one single document     
+     B_DOC:=ListGet(ExistDocs,0);
+else
+    //nothing was found    
+    Assert( not Question('Отсутствуют данные за предыдущий отчетный период. Прервать формирование отчета?'), 'Формирование отчета прервано операционистом' );
+    B_DOC := clear(0);
+end;
+   
+with 'Данные' do
+   for 'Данные' select
+      [select d.ID
+       from OD_DOC_CATS c
+        left join OD_DOCS d on d.D_CAT=c.ID and d.KVIT=:D
+        left join OD_DOC_STATES s on s.ID=d.STATE
+       where c.SYS_NAME='REP_PIF2_OWNERS' and s.IS_OUT='F']
+   from d_operation._DOC
+   into E_REP
+   do
+      try
+         ExecSQL('Данные', [update OD_DOCS set ID=0, STATE=0 where ID=:D], E_REP); // удалим все не зафиксированные в архиве отчёты
+         ExecSQL('Данные', [delete from OD_DOCS where ID=:D], E_REP);
+      except dummy end
+   end;
+   
+   B_REP := _f_pif->Get_RE_PIF_OWNERS(B_DOC, null);
+   A_FisRusND:= _f_pif.Get_RE_PIF_OWNERS.A_FisRusND; A_FisRusNDCD:= _f_pif.Get_RE_PIF_OWNERS.A_FisRusNDCD;
+   A_FisRusDU:= _f_pif.Get_RE_PIF_OWNERS.A_FisRusDU; A_FisRusALL := _f_pif.Get_RE_PIF_OWNERS.A_FisRusALL;
+   A_FisNRsND:= _f_pif.Get_RE_PIF_OWNERS.A_FisNRsND; A_FisNRsNDCD:= _f_pif.Get_RE_PIF_OWNERS.A_FisNRsNDCD;
+   A_FisNRsDU:= _f_pif.Get_RE_PIF_OWNERS.A_FisNRsDU; A_FisNRsALL := _f_pif.Get_RE_PIF_OWNERS.A_FisNRsALL;
+   A_UriRusND:= _f_pif.Get_RE_PIF_OWNERS.A_UriRusND; A_UriRusNDCD:= _f_pif.Get_RE_PIF_OWNERS.A_UriRusNDCD;
+   A_UriRusDU:= _f_pif.Get_RE_PIF_OWNERS.A_UriRusDU; A_UriRusALL := _f_pif.Get_RE_PIF_OWNERS.A_UriRusALL;
+   A_UriNRsND:= _f_pif.Get_RE_PIF_OWNERS.A_UriNRsND; A_UriNRsNDCD:= _f_pif.Get_RE_PIF_OWNERS.A_UriNRsNDCD;
+   A_UriNRsDU:= _f_pif.Get_RE_PIF_OWNERS.A_UriNRsDU; A_UriNRsALL := _f_pif.Get_RE_PIF_OWNERS.A_UriNRsALL;
+   A_IFALL   := _f_pif.Get_RE_PIF_OWNERS.A_IFALL;
+   C_FisRusND:= _f_pif.Get_RE_PIF_OWNERS.C_FisRusND; C_FisRusNDCD:= _f_pif.Get_RE_PIF_OWNERS.C_FisRusNDCD;
+   C_FisRusDU:= _f_pif.Get_RE_PIF_OWNERS.C_FisRusDU; C_FisRusALL := _f_pif.Get_RE_PIF_OWNERS.C_FisRusALL;
+   C_FisNRsND:= _f_pif.Get_RE_PIF_OWNERS.C_FisNRsND; C_FisNRsNDCD:= _f_pif.Get_RE_PIF_OWNERS.C_FisNRsNDCD;
+   C_FisNRsDU:= _f_pif.Get_RE_PIF_OWNERS.C_FisNRsDU; C_FisNRsALL := _f_pif.Get_RE_PIF_OWNERS.C_FisNRsALL;
+   C_UriRusND:= _f_pif.Get_RE_PIF_OWNERS.C_UriRusND; C_UriRusNDCD:= _f_pif.Get_RE_PIF_OWNERS.C_UriRusNDCD;
+   C_UriRusDU:= _f_pif.Get_RE_PIF_OWNERS.C_UriRusDU; C_UriRusALL := _f_pif.Get_RE_PIF_OWNERS.C_UriRusALL;
+   C_UriNRsND:= _f_pif.Get_RE_PIF_OWNERS.C_UriNRsND; C_UriNRsNDCD:= _f_pif.Get_RE_PIF_OWNERS.C_UriNRsNDCD;
+   C_UriNRsDU:= _f_pif.Get_RE_PIF_OWNERS.C_UriNRsDU; C_UriNRsALL := _f_pif.Get_RE_PIF_OWNERS.C_UriNRsALL;
+   C_IFALL   := _f_pif.Get_RE_PIF_OWNERS.C_IFALL;
+   C_AccFis := _f_pif.Get_RE_PIF_OWNERS.C_AccFis;  D_AccFis := _f_pif.Get_RE_PIF_OWNERS.D_AccFis;
+   C_AccUri := _f_pif.Get_RE_PIF_OWNERS.C_AccUri;  D_AccUri := _f_pif.Get_RE_PIF_OWNERS.D_AccUri;
+   C_AccDU  := _f_pif.Get_RE_PIF_OWNERS.C_AccDU;   D_AccDU  := _f_pif.Get_RE_PIF_OWNERS.D_AccDU;
+   C_AccND  := _f_pif.Get_RE_PIF_OWNERS.C_AccND;   D_AccND  := _f_pif.Get_RE_PIF_OWNERS.D_AccND;
+   C_AccNDCD:= _f_pif.Get_RE_PIF_OWNERS.C_AccNDCD; D_AccNDCD:= _f_pif.Get_RE_PIF_OWNERS.D_AccNDCD;
+   C_AccDep := _f_pif.Get_RE_PIF_OWNERS.C_AccDep;  D_AccDep := _f_pif.Get_RE_PIF_OWNERS.D_AccDep;
+   C_AccKaz := _f_pif.Get_RE_PIF_OWNERS.C_AccKaz;  D_AccKaz := _f_pif.Get_RE_PIF_OWNERS.D_AccKaz;
+   C_AccNon := _f_pif.Get_RE_PIF_OWNERS.C_AccNon;  D_AccNon := _f_pif.Get_RE_PIF_OWNERS.D_AccNon;
+   A_AccDep := _f_pif.Get_RE_PIF_OWNERS.A_AccDep;  A_AccKaz := _f_pif.Get_RE_PIF_OWNERS.A_AccKaz;
+   A_AccNon := _f_pif.Get_RE_PIF_OWNERS.A_AccNon;
+   A_AccIss := _f_pif.Get_RE_PIF_OWNERS.A_AccIss;  A_AccDop := _f_pif.Get_RE_PIF_OWNERS.A_AccDop;
+   A_ObrThirdPart :=_f_pif.Get_RE_PIF_OWNERS.A_ObrThirdPart;  A_ObrDeath := _f_pif.Get_RE_PIF_OWNERS.A_ObrDeath; 
+   A_ObrBlin := _f_pif.Get_RE_PIF_OWNERS.A_ObrBlin;  A_ObrLawBased := _f_pif.Get_RE_PIF_OWNERS.A_ObrLawBased;
+   A_ObrZalog := _f_pif.Get_RE_PIF_OWNERS.A_ObrZalog;
+   A_ObrWhole := _f_pif.Get_RE_PIF_OWNERS.A_ObrWhole;
+   // данные на предыдущую отчётную дату будут переданы в отчёт на параметрах отчёта,
+   // а данные на текущую дату - на выходных параметрах следующей функции:
+   _f_pif.Get_RE_PIF_OWNERS.APPL_ID := APPL_ID;   
+   E_REP       := _f_pif->Get_RE_PIF_OWNERS(d_operation._DOC, ET);
+   Q1StrSheet9 := _f_pif.Get_RE_PIF_OWNERS.Q1StrSheet9;  //общее количество строк в таблицу на листе 9 (включая с долей <=0.05)
+   QStrSheet9  := _f_pif.Get_RE_PIF_OWNERS.QStrSheet9;   //количество строк с количество паев >0.05 для передачи количества строк в Excel шаблон
+   if (QStrSheet9 =0) then                               //{ET.@recordcount=0}
+      InsEmptyStr(ET);
+   end;
+
+   if B_REP>0 then
+      _f_doc->Link_Add(B_REP, E_REP, 1100); // Квитовка двух хранимых отчётов: от отчёта предыдущего периода к отчёту текущему
+   end;
+   //Шаблон для количества паевого
+   Exc_MFU:='0.';
+   k:=0;While (k<_f_pif.Get_RE_PIF_OWNERS.MFU) do Exc_MFU:=Exc_MFU+'0';inc(k);end;
+end;
+
+MakeReport;
+_f_doc->ShowDoc(E_REP, false); // откроем хранимый отчёт
+_f_doc->ShowDoc(d_operation._DOC, false); // но наверху всё же оставим ту операцию, которая была
+
+if not IsBlank(_f_report.AddInfo.Info) then
+    message(_f_report.AddInfo.Info);
+end;
+
+if Question('Создать Запись в журнале регистрации исходящих документов?') then
+   _f_reestr->Get_Fund_Partners(d_operation._ISSUER);
+   var FLR:= _f_doc->OutDocFiler_Add(d_operation._DOC, E_REP, d_operation._ISSUER, _f_reestr.Get_Fund_Partners.COMPANY, clear(''), d_operation._D_DATE, clear(''), clear(now), 2{FINAL},
+     'Список владельцев', clear(''), clear(''), clear(''), clear(now), clear(0), clear(0));
+   ExecSQL('Данные', [update D_FILER set PASS_KIND=8/*ЭДО*/ where DOC=:D], FLR);
+end

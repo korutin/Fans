@@ -1,0 +1,78 @@
+//Inp_party_identification2_V02_with_FACE(%ds:int; %Way:str; Codes:List; name:str; FACE:int, Info:str)
+// Функция анализирует элемент типа party_identification2_V02_t и возвращает список кодов id;id_type;narrative
+// В выходном параметре name возвращается наименование 
+// Также функция пытается определить субъекта в справочнике субъектов Fansy соответствующего данным представленным в элемент типа Inp_party_identification2_V02_t
+// Элементы postal_address, party_contacts не обрабатываются поскольку не нужны для идентификации стороны
+// EKS 11.2020
+
+var tp, W, Inf, j, NRD, PoiskovijSpisok, cnt, SELF_ID,
+    id, id_type, narrative,
+    x_id_2;
+Info  := '';
+Codes := List();
+PoiskovijSpisok := List();
+Inf   := '';
+name  := '';
+FACE  := clear(0);
+tp    := Table(id str, id_type str, narrative str);
+try
+    NRD:=Extract1('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");   
+    // if IsBlank(NRD) then 
+    //     Info := _F_XML->Add_Info(Info, 'В справочниках субъектов не найдено юр.лицо с мнемоникой НДЦ');
+    // end
+except
+    // raise("Найдено несколько юр.лиц с мнемоникой 'НДЦ'");
+    Info := _F_XML->Add_Info(Info, 'Найдено несколько юр.лиц с мнемоникой НДЦ');
+end;
+
+// x_id_2.@First;
+// While ~x_id_2.@EOF do
+//     Inf := '';
+//     _F_NXML2->Inp_id_type_V02_t(%ds._id_2, W, id, id_type, narrative, Inf);
+//     if isBlank(Inf) then
+//         ListAdd(Codes, str(id)+';'+str(id_type)+';'+str(narrative));
+//     else
+//         Info := _F_XML->Add_Info(Inf, _F_NXML2->Add_InfoWay(W, 'Ошибка при разборе типа id_type_V02_t'));
+//     end;
+//     x_id_2.@NEXT;
+// End;
+
+// Ищем первый попавшийся элемент <id_2> у которого в NARRATIVE будет прописано NSDR , то есть код с точки зрения НРД
+if (%ds.?id_2) then
+    x_id_2 := %ds._id_2;
+    W      := _F_NXML2->Add_Way(%Way, 'id_2');
+    if TableFind(x_id_2, List('id_type=OTHR', 'narrative=NSDR')) then
+        // FACE := _F_REPORT->GetFaceByTicker(x_id_2._id, NRD);
+        FACE := _F_IN_MESS->FIND_FACE_BT( x_id_2._id, List('MNEM=НДЦ'), info);
+    end;
+    //Если найдено лицо по тикеру, то на остальные коды не обращаем внимание, если не найдено идем шерстить другие предоставленные коды
+    if (isNull(FACE)) then
+        if TableFind(x_id_2, List('id_type=OGRN')) then
+            ListAdd(PoiskovijSpisok, 'OGRN='+str(x_id_2._id));
+        end;
+        if TableFind(x_id_2, List('id_type=RINN')) then
+            ListAdd(PoiskovijSpisok, 'INN='+str(x_id_2._id));
+        end;
+        _F_IN_MESS->FIND_FACE(PoiskovijSpisok, 0,0, cnt, Inf, SELF_ID);
+        if cnt=0 then
+            Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Лицо не идентифицировано'));
+        elsif (cnt>1) then
+            Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Найдено несколько лиц с указанным реквизитами'));
+        end;
+    end;
+    
+else
+    W    := _F_NXML2->Add_Way(%Way, 'id_2');
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Отсутсвует обязательный элемент содержащий идентификатор'));
+end;
+
+if (%ds.?name) then
+    name := %ds._name;
+else
+    W    := _F_NXML2->Add_Way(%Way, 'name');
+end;
+
+// TO-DO: Анализитор тэга postal_address (тэг не обязательный. не очень нужен)
+
+// TO-DO: Анализитор тэга party_contacts
+

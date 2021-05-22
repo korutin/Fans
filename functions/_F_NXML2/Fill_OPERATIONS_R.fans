@@ -1,0 +1,102 @@
+// Fill_OPERATIONS_R(%doc_id:int; %mute:int; LDepos:List):int
+// Создает операции "Формирование информации о владельцах" на основае подвалов документа "Запрос на сбор списка/информации о лицах"
+// Предназначено для вызовов в Fansy - REESTR
+//   %doc_id     - документ категории R_DISCLOSURE_REQUEST
+//   LDepos      - список проблемных счетов
+// Возвращаемое значение:
+//   0 - операции сформированы
+//   1 - первый подвал не готов к формированию операции (есть строки с пустыми счетами депо и установленными флагами MUST_OPEN)
+// -----------------------------------------------------
+// EKS 04.2021
+var NoStopDate, DOC_ID, R_DATE, ISSUER, D_DATE, D_NUM, NUM, B_TYPE, B_NUM, B_DATE, MUST_OPEN, DEPO_2, DEPO_1, ACCOUNT_ORIGINAL;
+var thereAreBadDepos, cntDol, de, des, c, deL, fs, L, q, d0, DOL_ID;
+var T_SHARES_BALANCE := Table(DEPO_2 int, DEPO_2_NAME str, SHARE_2_ID int, AMOUNT float, BLOCK_AMOUNT float, ZALOG_AMOUNT float, PLAC_AMOUNT float, BLFL_AMOUNT float, BLTR_AMOUNT float, BLIN_AMOUNT float, 
+                                                                                         BLFC_AMOUNT  float, BLRO_AMOUNT float, BLCV_AMOUNT float);
+
+
+// Проверяем первый подвалЪ
+c := 1;
+thereAreBadDepos := 0;
+LDepos:=List();
+for 'Данные' select [ select dl.ID
+                      from OD_DOLS dl
+                      where dl.FOOTER = 1 and dl.DOC = :DOC ]
+from %doc_id
+into DOL_ID
+do
+    MUST_OPEN := int(_F_BUX_OP->GET_OP_VAL_LINE( %doc_id, DOL_ID, 'MUST_OPEN'));
+    DEPO_1    := _F_BUX_OP->GET_OP_VAL_LINE( %doc_id, DOL_ID, 'DEPO_1');
+    ACCOUNT_ORIGINAL := _F_BUX_OP->GET_OP_VAL_LINE( %doc_id, DOL_ID, 'ACCOUNT_ORIGINAL');
+    if MUST_OPEN and isBlank(DEPO_1) then
+        ListAdd(LDepos, ACCOUNT_ORIGINAL);
+        thereAreBadDepos := 1;
+    end;
+end;
+
+if not thereAreBadDepos then
+    c := 1;    
+    // Делаем директиву независимой от способа реализации категории (Heap-maden или Table-maden)
+    for 'Данные' select [ select dl.ID
+                          from OD_DOLS dl
+                          where dl.FOOTER = 2 and dl.DOC = :DOC] 
+    from %doc_id
+    using q
+    do
+        //MUST_OPEN := int(_F_BUX_OP->GET_OP_VAL_LINE( %doc_id, q._ID, 'MUST_OPEN'));
+        //DEPO_2    := _F_BUX_OP->GET_OP_VAL_LINE( %doc_id, q._ID, 'DEPO_2');
+        T_SHARES_BALANCE.@APPEND;
+        //T_SHARES_BALANCE._DEPO_2     := _F_BUX_OP->GET_OP_VAL_LINE_BY_NUM(%doc_id, c, 'DEPO_2');
+        //T_SHARES_BALANCE._SHARE_2_ID := _F_BUX_OP->GET_OP_VAL_LINE_BY_NUM(%doc_id, c, 'SHARE_2_ID');
+        T_SHARES_BALANCE._DEPO_2     := _F_BUX_OP->GET_OP_VAL_LINE( %doc_id, q._ID, 'DEPO_2');
+        T_SHARES_BALANCE._SHARE_2_ID := _F_BUX_OP->GET_OP_VAL_LINE( %doc_id, q._ID, 'SHARE_2_ID');
+        T_SHARES_BALANCE.@POST;
+        inc(c);
+    end;
+    
+    c := 1;
+    _F_DOC->GetDoc(%doc_id);
+    NUM    := _F_DOC.GetDoc.NUM;
+    B_TYPE := _F_BUX_OP->GET_OP_VAL( %doc_id, 'B_TYPE');
+    B_NUM  := _F_BUX_OP->GET_OP_VAL( %doc_id, 'B_NUM');
+    B_DATE := _F_BUX_OP->GET_OP_VAL( %doc_id, 'B_DATE');
+    D_DATE := _F_DOC.GetDoc.D_DATE;
+    R_DATE := _F_BUX_OP->GET_OP_VAL( %doc_id, 'R_DATE');
+    ISSUER := _F_BUX_OP->GET_OP_VAL( %doc_id, 'ISSUER');
+
+    for 'Данные' select [ select dl.ID
+                          from OD_DOLS dl
+                          where dl.FOOTER = 1 and dl.DOC = :DOC ]
+    from %doc_id
+    into DOL_ID
+    do
+        MUST_OPEN := int(_F_BUX_OP->GET_OP_VAL_LINE( %doc_id, DOL_ID, 'MUST_OPEN'));
+        if MUST_OPEN then
+            d0 := int(_F_BUX_OP->GET_OP_VAL_LINE( %doc_id, DOL_ID, 'DEPO_1' ));    
+            
+            // -----------------------------------------------------------------------------------------------
+            DOC_ID := _F_BUX_OP->CREATE_OPS( 'OP_R_INF_REESTR', now, 'START_AUTO', %doc_id, 0, NoStopDate);
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'B_TYPE', B_TYPE );      // 
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'B_NUM',  B_NUM );
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'B_DATE', B_DATE );
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'DD_TYPE', 2 );          // Пока ставим константно "Службеное"
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'DD_NUM',  NUM );
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'DD_DATE', D_DATE );
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'R_DATE',  R_DATE );
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'IS_DEPO_DATE', '0' );   // И.Гурова убедила выставить 'на дату учёта в стороннем депозитарии'
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'ISSUER', ISSUER);
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'FROM_FACE', MyFace);
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'CHAIN', d0);    
+            L := List();    
+            T_SHARES_BALANCE.@First;
+            TableFilter( T_SHARES_BALANCE, 'DEPO_2='+str(d0));
+            While ~T_SHARES_BALANCE.@EOF do
+                ListAdd( L, T_SHARES_BALANCE._SHARE_2_ID);
+                T_SHARES_BALANCE.@Next;
+            End;
+            fs := Replace(L, #13+#10, ',');
+            _F_BUX_OP->MODIFY_OP_VAL( DOC_ID, 'SHARE', fs);      // Все ЦБ Эмитенту   
+            TableUnFilter( T_SHARES_BALANCE );
+        end;
+    end;
+end;
+thereAreBadDepos;

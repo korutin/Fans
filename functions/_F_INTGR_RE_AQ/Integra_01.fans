@@ -1,0 +1,180 @@
+// Integra_01
+// --------------------------------------------------------------------------------------
+// Интеграционный тест для проверки процедуры массовой выдачи паёв на лицевой счет Центрального депозитария.
+// Центральным объектом проверки является категория докуметов "Массовая выдача паёв"
+// Возвращаемое значение 0 - passed (тест прошел)
+//                       1 - не прошел
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed; 1 - error
+//                                      log      : список строк с ошибками
+// EKS 09.2020
+
+uses _F_BUX_OP, _F_NXML;
+
+// $meta begin
+var __tFace_CentralD   := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str), __tOMETA Table(ID int, CLASS str)),
+    __tFace_ETF        := Table(B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str), __tOMETA Table(ID int, CLASS str)),
+    __tClient_CentralD := Table(BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, __tAFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int, INCOME_ACC int, INCOME_FACE int, INCOME_REC str), __tOMETA Table(ID int, CLASS str)),
+      tClaim_cc        := Table(NUM str, D_DATE datetime, FOND int, AGENT int, POINT int, TRUSTER int, Z_TYPE int, DEPO_LS str, DOC int, K_DEPO str, K_OSN str, K_NAME str, SUMMA float, __tOMETA Table(ID int, CLASS str));
+// $meta end
+
+var sm, etalon_in, etalon_out, err_c,  Dt1, Dt2, Dt3, Dt4_et, Dt5, f_date, k, qnt, openBalance, closeBalance, fname, MASS_DATE_asFloat, confDate, maxConfDate,
+    docDateOtvet, docDateZapros;
+var logK;
+var QA_CODE    := '$xxxxxxxxxxxx_qa01', F_ID, SELF_ID, ISSUER, CLIENT_ID, NRD_ID, D_ID, PIF_ID, MASS_NUM, MASS_DATE, SHARE, DOL_ID, GIVECLI_ID, DPL, SF;
+var CLM_REESTR        := Table( trType str, codeBaseTr str, docNum str, docDate Date, qnt float, openBalance float, closeBalance float, outDocNum str, inDocNum str, outDocDate Date,
+                                prcDateTime Datetime, prcRef str, owner str),
+    CLM_REESTR_STATUS := Table( trType str, codeBaseTr str, docNum str, docDate Date, outDocNum str, inDocNum str, outDocDate Date,
+                                prcDateTime Datetime, prcRef str, status str, confDate datetime);
+
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Создание Лица с указанием его реквизитов напрямую
+
+var BangMoment          := datetime('01.09.2020 09:00:00'),
+    NominiAccOpenMoment := datetime('01.09.2020 12:10:00'),
+    IssueMoment01       := datetime('03.09.2020 10:00:00'),
+    F_DEPO_LS           := 'ML00000000009',
+    docNumZapros        := '01-01-toNRD',
+    docNumOtvet         := '01-01-fromNRD',
+    // Ассоциативные массивы
+    qntClaims           := 3,                                                                            // Количество заявок на выдачу
+    GetClaimMoments     := List('02.09.2020 10:00:00', '02.09.2020 10:20:00', '02.09.2020 10:20:15'),    // список моментов поступления заявок
+    ClaimAmounts        := List(10.09, 8, 14.3),
+    ClaimSumms          := List(10090, 8000, 14300),
+    ReviseStatus        := List('CONF','CONF','CONF'),
+    ReviseTimeStamp     := List(5*60, 5*60+1, 5*60+3),                                                   // список дельт (примерно в сек) сверок по отношению к дате/времени (D_DATE) документа Массовой выдачи паев
+    RejectReasons       := List('','','');                                                               // Отказы по каждой из заявок. Если в ReviseStatus лежит CONF , то соответствующий элемент пуст.
+var MASS_ID;
+
+SHARE      := 10071;
+GIVECLI_ID := 369;
+ISSUER     := 4929886;
+NRD_ID     := 4929885; //clear(0);
+// SelectSQL('Данные', [ SELECT id FROM od_faces WHERE mnem = :m and LAST_FLAG = 1 ], 'НДЦ', NRD_ID, exit);
+// if isBlank(NRD_ID) then
+//     NRD_ID := _QA->InsFaceByAlias_t('NDC-A', BangMoment, __tFace_CentralD);
+// else
+//     // Если попали сюда, значит в базе уже есть лицо с мнемоникой НДЦ, правим его во что-нибудь другое 
+//     ExecSQL('Данные', [ UPDATE od_faces SET mnem = :mm WHERE id = :id], 'НДЦ_'+str(self), NRD_ID );
+//     NRD_ID := _QA->InsFaceByAlias_t('NDC-A', BangMoment, __tFace_CentralD);
+// end;
+
+//ISSUER    := _QA->InsFaceByAlias_t('JurRusIssuer-01', BangMoment, __tFace_ETF );
+CLIENT_ID := _QA->InsClientByAlias_t('CD-01', NominiAccOpenMoment, NRD_ID, ISSUER, null, __tClient_CentralD);
+
+// CREATE_OPS( %D_CAT_SYS_NAME, %D_DATE, %STATE :str; %KVIT:int, %DIRECTION :int; NoStopDate :int )
+// _F_BUX_OP.CREATE_OPS.NoStopDate := 1;
+// MASS_ID := _F_BUX_OP->CREATE_OPS('OP_R_COM_ZACH', IssueMoment01, 'START', clear(0), 0);
+// _F_DOC->GetDoc(MASS_ID);
+// MASS_NUM  := _F_DOC.GetDoc.NUM;
+// MASS_DATE := _F_DOC.GetDoc.D_DATE;
+
+_F_DOC->CREATE_DOC('OP_R_COM_ZACH', fname);
+_F_DOC->Modify_Doc_Field(fname, 'D_OPERATION', 'SHARE', str(SHARE));
+_F_DOC->Modify_Doc_Field(fname, 'D_OPERATION', 'DEPO', str(CLIENT_ID));
+_F_DOC->Modify_Doc_Field(fname, 'D_OPERATION', 'EMI', str(GIVECLI_ID));
+_F_DOC->Modify_Doc_Field(fname, 'D_OPERATION', 'DEPO_LS', F_DEPO_LS);
+_F_DOC->Save_doc(fname, 'D_OPERATION');
+//DPL := owner.D_OP_LINES.self;
+SF  := PropVal( ActiveForm, 'self' );
+DPL := SF.D_OP_LINES.self;
+
+MASS_ID           := _F_DOC->GET_DOC_FIELD( fname,  'D_OPERATION', 'DOC' );
+MASS_NUM          := _F_DOC->GET_DOC_FIELD( fname,  'D_OPERATION', 'NUM' );
+MASS_DATE         := _F_DOC->GET_DOC_FIELD( fname,  'D_OPERATION', 'D_DATE' );
+MASS_DATE_asFloat := float(MASS_DATE);
+
+docDateOtvet      := MASS_DATE;
+docDateZapros     := MASS_DATE;
+// Создаем заявки на выдачу в БД, попутно заполняя таблицу CLM_REESTR
+k           := 0;
+sm          := 900;
+openBalance := 0.0;
+maxConfDate := 0;
+confDate    := 0.0;
+While (k < qntClaims) do
+    TableClear(tClaim_cc);
+    tClaim_cc.@APPEND;
+    tClaim_cc._D_DATE  := datetime(ListGet(GetClaimMoments, k));
+    tClaim_cc._FOND    := ISSUER;
+    tClaim_cc._AGENT   := MyFace;
+    tClaim_cc._POINT   := clear(0);
+    tClaim_cc._TRUSTER := NRD_ID;
+    tClaim_cc._Z_TYPE  := 1;
+    tClaim_cc._SUMMA   := ListGet(ClaimSumms, k);
+    tClaim_cc.@POST;
+    D_ID :=_QA->InsClaim_t(tClaim_cc);
+    qnt                := ListGet(ClaimAmounts, k);    
+    // -------------------------------------------
+    DPL.@INSERT;
+    DPL.~CLAIM  := D_ID;
+    DPL.~AMOUNT := qnt;
+    DPL.@SAVE; 
+    
+    // -------------------------------------------    
+    closeBalance := openBalance + qnt;
+    TableInsert( CLM_REESTR, List('trType=RECE',
+                                  'codeBaseTr=TR14',
+                                  'docNum=' + tClaim_cc._NUM,
+                                  'docDate=' + str(date(tClaim_cc._D_DATE)),
+                                  'qnt=' + str(qnt),
+                                  'openBalance=' + str(openBalance),
+                                  'closeBalance=' + str(closeBalance),
+                                  'outDocNum=' + tClaim_cc._NUM,
+                                  'inDocNum=NONREF',
+                                  'outDocDate=' + str(date(tClaim_cc._D_DATE)),
+                                  'prcDateTime=' + str(MASS_DATE),         // MASS_DATE это DateTime
+                                  'prcRef=' + MASS_NUM,
+                                  'owner=' + F_DEPO_LS));    
+    //= Table(trType str, codeBaseTr str, docNum str, docDate Date, outDocNum str, inDocNum str, outDocDate Date,
+    //                   prcDateTime Ddatetime, prcRef str, status str, confDate datetime);
+    confDate := MASS_DATE_asFloat + float(ListGet(ReviseTimeStamp, k))/50000;
+    TableInsert( CLM_REESTR_STATUS , List('trType=RECE',
+                                          'codeBaseTr=TR14',
+                                          'docNum='      + tClaim_cc._NUM,
+                                          'docDate='     + str(date(tClaim_cc._D_DATE)),
+                                          'outDocNum='   + tClaim_cc._NUM,
+                                          'inDocNum=NONREF',
+                                          'outDocDate='  + str(date(tClaim_cc._D_DATE)),
+                                          'prcDateTime=' + str(date(MASS_DATE)),                  // в ответе НРД передает дату а не дату/время
+                                          'prcRef='      + MASS_NUM,
+                                          'status='      + ListGet(ReviseStatus, k), 
+                                          'confDate='    + str(datetime(confDate))
+                                         ));                                  
+    openBalance := closeBalance;    
+    inc(k);
+    sm := sm + 20;
+    if confDate>maxConfDate then maxConfDate := confDate; end;
+End;
+
+etalon_in  := [];
+etalon_out := [];
+
+_F_NXML->CreateTest_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF( docNumZapros, date(docDateZapros), CLIENT_ID, SHARE, CLM_REESTR, etalon_in);
+
+// CreateTest_SETTLEMENT_TRANSACTION_STATUS_ADVICE_MIF( %header_doc_num, %header_doc_date, %out_doc_num, %out_doc_date, %in_doc_num, %in_reg_date, 
+//                                                      %CLIENT, %SHARE, %CLM_REESTR:int; content)
+_F_NXML->CreateTest_SETTLEMENT_TRANSACTION_STATUS_ADVICE_MIF( docNumOtvet, date(docDateOtvet),              //%header_doc_num, %header_doc_date,
+                                                              docNumZapros, date(docDateZapros),            //%out_doc_num, %out_doc_date, 
+                                                              str(docNumOtvet) + '-01', date(docDateOtvet), //%in_doc_num, %in_doc_date,   - считаем что ответили в этот же день.
+                                                              CLIENT_ID, SHARE, CLM_REESTR_STATUS, etalon_out);
+
+Message(etalon_in);
+Message(etalon_out);
+//CLM_REESTR = Table( trType str, codeBaseTr str, docNum str, docDate Date, qnt float, openBalance float, closeBalance float, outDocNum str, inDocNum str, outDocDate Date,
+//                    prcDateTime Ddatetime, prcRef str, owner str);    
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария
+// try
+//     // Исполнить директиву формирования Запроса на сверку.
+//     _F_DOC->Exec_Doc_Dir_BySysName(MASS_ID, clear(0), 'EDO_XML_QUERY_CMPL_REVISE', 1{%mute});
+// except
+//       ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением')
+// end;
+
+0

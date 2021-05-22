@@ -1,0 +1,66 @@
+//Inp_Party_id_name_V03_t_with_FACE(%ds:int; party_IDs:List; name:str; FACE:int; counter:int; Info:str)
+// --------------------------------------------------------------------------------
+//   С помощью типа party_id_name_V03_t, как следует из аннотации, могут задаваться как субъекты (физиски/юрики) так и другие субъекты учета
+//   например, счета.
+//   Данная функция считает что заданы реквизиты юр.лица и она ищет юрлицо в соответствующем справочнике.
+// by EKS 12.2020
+
+var CODER, issuer, scheme_name,ID, Inf, ii, k, item, qq, LNm, Nm;
+FACE      := clear(0);
+party_IDs := List();
+LNm       := List();
+ID        := clear(0);
+Info      := Inf := '';
+name      := clear('');
+counter   := 0;
+_F_NXML2->Inp_Party_id_name_V03_t(%ds, party_IDs, name, Inf);
+        k := ListCount(party_IDs);
+if (isBlank(Inf)) then
+    if (k>0) then
+        ii     := 0;
+        issuer := clear(0);
+        While (ii<k) do
+                   item := ListGet(party_IDs, ii);
+                     id := Token(item,';', 1);
+                 issuer := Token(item,';', 2);
+            scheme_name := Token(item,';', 3);
+            
+            //if ~isBlank(issuer) then exit; end;
+            //inc(ii);
+            //CODER := clear(0);
+            FACE := clear(0);
+            if ~isBlank(issuer) then
+                if UpperCase(issuer) = 'NSDR' then
+                    // CODER := _F_NXML2.NDC_ID;
+                    // FACE  := Extract('Данные', 'select FACE from OD_FACE_CODERS where CODE=:CODE and CODER=:CODER', id, CODER);
+                    // Поиск лица в справочнике по тикеру с точки зрения кодировщика имеющего мнемонику НДЦ (то есть с точки зрения НРД)
+                    Inf := '';
+                    FACE := _F_IN_MESS->FIND_FACE_BT( id, List('MNEM=НДЦ'), inf);
+                    if ~isBlank(Inf) then 
+                        Info := _F_XML->Add_Info(Info, 'Поиск по тикеру<'+str(id)+'> с точки зрения НРД:'+Inf); 
+                    else
+                        counter := 1;                       
+                    end; 
+                end;    
+                if IsBlank(FACE) and UpperCase(issuer) = 'OGRN' then
+                    // FACE := Extract1('Данные',[select F.SELF_ID 
+                    //                            from OD_U_FACES U left join OD_FACES F ON F.ID=U.FACE AND F.E_DATE='01.01.9999'
+                    //                            where U.OGRN=:OGRN and F.LAST_FLAG=1 and (U.OPF is null or U.OPF not in ('ПФ','ПЮЛ'))], id);
+                    counter := 0; Nm := '';
+                    SelectSQL('Данные',[select F.SELF_ID, F.NAME 
+                                        from OD_U_FACES U left join OD_FACES F ON F.ID=U.FACE AND F.E_DATE='01.01.9999'
+                                        where U.OGRN=:OGRN and F.LAST_FLAG=1 and (U.OPF is null or U.OPF not in ('ПФ','ПЮЛ'))], str(id), FACE, Nm, inc(counter);ListAdd(LNm, Nm));
+                    if counter>1 then Info:=_F_XML->Add_Info(Info, "Поиск по ОГРН<"+str(id)+">: Найдено несколько субъектов "+Lnm); end;
+                end;                    
+            elsif ~isBlank(scheme_name) then
+                dummy; // "Поиск по scheme_name не реализован"
+            end;
+            inc(ii);
+        end        
+    else
+        Info:=_F_XML->Add_Info(Info, "Список с типом party_id_name_V03_t для поиска субъекта пуст.");
+    end;
+else
+    Info:=_F_XML->Add_Info(Info, Inf);
+end;
+FACE;

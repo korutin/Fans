@@ -1,0 +1,84 @@
+// Get_Reestr_Lines(%D_OP_LINES, %D_OP_LINES_3, %T, %T3:int;%Rep_D:Date)
+// ------------------------------------------------------------------
+// Функция упаковывает содержимое выборок D_OP_LINES, D_OP_LINES_3 из операции "Формирование списка лиц" в таблицы %T и %T3 соответственно.
+// по каждому лицевому счету из выборки %D_OP_LINES собирается дополнительная информация имеющаяся в справочнике лицевых счетов.
+// %T  -  Table(    No str, DEPO_AMOUNT float, DEPO_AMOUNT_OBR float, DEPO int, FOR_OPEN str, DEPO_NAME str, 
+//                  CL_NUMBER str, CL_FACE int, CL_F_DATE datetime, CL_SUBTYPE int, 
+//                  CL_STATE int, CL_STATE_NAME str, SUBTYPE_NAME str, EXT_FACE int, CL_INCOME_MOD int, CL_INCOME_ACC int, 
+//                  FULL_NAME str, NAME str, CL_BANK_AREQ str,
+//                  BANK_AREQ List, DOC_ALL List, HOME_ADR List, MAIL_ADR List, INN List, SELF_IDS List, AFFILS_IDS
+//               );
+//                  
+// %T3 -  Table(  No str, AMOUNT_ float, EXT_FACE_ int, OWNERID str, NAME str, DOC_ALL str, HOME_ADR str, MAIL_ADR str, BANK_AREQ str, 
+//                FOR_INNER_DEPO_NUMBER str, FOR_INNER_DEPO int, DEPO_TYPE_3_NAME str, OWNER_INN str, OWNER_MAIL_ADR str)
+//
+// EKS 11.2019
+
+var i, item, L,
+    c_docs_all, c_ADRESSES, c_mail_adresses, c_faces,
+    DOC, A_DOC, BANK_NAME, BANK_CITY, BANK_BIC, BANK_INN, BANK_KORR, ACC_RS, ACC_DEPART, BANK_P_NAME, ACC_LS, SELF_ID;
+TableClear(%T);
+
+%D_OP_LINES.@First;
+While (~%D_OP_LINES.@EOF) do
+    %T.@APPEND;
+    %T._DEPO_AMOUNT := str(%D_OP_LINES._DEPO_AMOUNT);
+    %T._DEPO        := str(%D_OP_LINES._DEPO);
+    %T._FOR_OPEN    := str(%D_OP_LINES._FOR_OPEN);
+    %T._DEPO_NAME   := str(%D_OP_LINES._DEPO_NAME);    
+    // --------------------------------------------------------------    
+    _F_DEPO->GetClient(%D_OP_LINES._DEPO);
+    %T._CL_FACE      := str(_F_DEPO.GetClient.FACE);
+    %T._CL_F_DATE    := str(_F_DEPO.GetClient.F_DATE);
+    %T._CL_SUBTYPE   := str(_F_DEPO.GetClient.SUBTYPE);
+    %T._SUBTYPE_NAME := str(_F_DEPO.GetClient.SUBTYPE_NAME);
+    
+    %T._CL_INCOME_MOD:= str(_F_DEPO.GetClient.INCOME_MOD);
+    %T._CL_INCOME_ACC:= str(_F_DEPO.GetClient.INCOME_ACC);
+    //-----------------------------------------------------    
+    %T._EXT_FACE     := str(%D_OP_LINES._EXT_FACE);
+    // --------------------------------------------------------------    
+
+    c_docs_all := c_ADRESSES := c_mail_adresses := c_faces := 0;
+    _f_report->CoOwners(%D_OP_LINES._DEPO,_F_DEPO.GetClient.F_DATE, %Rep_D);
+
+    %T._FULL_NAME:= _f_report.CoOwners.faces;
+    _f_report->Get_Ext_FACE(%D_OP_LINES._EXT_FACE);
+    %T._CL_BANK_AREQ := _f_report.Get_Ext_FaceA.BANK_AREQ;
+    
+    
+    %T._DOC_ALL  := _f_report.CoOwners.docs_all;
+    %T._HOME_ADR := _f_report.CoOwners.ADRESSES;
+    %T._MAIL_ADR := _f_report.CoOwners.mail_adresses;
+    %T._INN      := _f_report.CoOwners.inns;
+    %T._SELF_IDS  := _f_report.CoOwners.self_ids;
+    %T._AFFILS_IDS  := _f_report.CoOwners.affils_ids;
+    %T.@POST;    
+    %D_OP_LINES.@NEXT;
+End;
+%D_OP_LINES.@FIRST;
+
+TableClear(%T3);
+%D_OP_LINES_3.@First;
+While (~%D_OP_LINES_3.@EOF) do
+    //AMOUNT_ float, EXT_FACE_ int, OWNERID int, FOR_INNER_DEPO_NUMBER str, DEPO_TYPE_NAME str
+    L := List();
+    ListAdd(L, 'OWNERID='+str(%D_OP_LINES_3._OWNERID));
+    ListAdd(L, 'OWNER_INN='+str(%D_OP_LINES_3._OWNER_INN));
+    ListAdd(L, 'OWNER_MAIL_ADR='+str(%D_OP_LINES_3._OWNER_MAIL_ADR));
+    ListAdd(L, 'FOR_INNER_DEPO_NUMBER=' + str(%D_OP_LINES_3._FOR_INNER_DEPO_NUMBER));
+    ListAdd(L, 'FOR_INNER_DEPO=' + + str(%D_OP_LINES_3._FOR_INNER_DEPO));
+    ListAdd(L, 'DEPO_TYPE_3_NAME=' + str(%D_OP_LINES_3._DEPO_TYPE_3_NAME));
+    ListAdd(L, 'AMOUNT_=' + str(D_OP_LINES_3._AMOUNT_));
+    // --------------------------------------------------------------    
+    _f_report->Get_Ext_Face( D_OP_LINES_3._EXT_FACE_); 
+    ListAdd(L, 'DOC_ALL=' + _f_report.Get_Ext_Face.doc_all);
+    ListAdd(L, 'NAME=' + _f_report.Get_Ext_Face.NAME);
+    ListAdd(L, 'HOME_ADR=' + _f_report.Get_Ext_Face.Home_Adr);
+    ListAdd(L, 'MAIL_ADR=' + _f_report.Get_Ext_Face.Mail_Adr);
+    ListAdd(L, 'BANK_AREQ=' + _f_report.Get_Ext_FaceA.BANK_AREQ);
+    
+    TableInsert(%T3, L);
+    ~%D_OP_LINES_3.@next;
+end;
+0

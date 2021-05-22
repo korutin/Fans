@@ -1,0 +1,88 @@
+// InsShare_t(%Profile_t:int):int
+// -----------------------------------------------------------------------------------------------------------------
+// Вставка в БД лица представленного во входящем DataSet ,тип TShare
+// 
+// EKS 12.2020
+
+// Хочешь узнать структуру таблицы %Profile_t вызови _QA->GenRequizShare и в _QA._L2 получишь список полей с типами
+
+var  VALUE_ID, SHARE_ID, FACE_ID, FIELDS, x_meta, x_modes, x_codes, x_shares;
+
+FACE_ID  := clear(0);
+FIELDS   := List();
+
+x_meta   := %Profile_t.___tOMETA;
+if (LowerCase(x_meta._CLASS)<>'tshare') then
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsShare_t",
+                  "mess" : "Ошибка: в таблице профиля передан не тип TShare, а какой-то другой"}]);
+end;
+x_codes := %Profile_t.___tShCodes;
+
+if (%Profile_t.@RECORDCOUNT=0) then
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsShare_t",
+             "mess"      : "Ошибка: в таблице профиля нет записей"}]);
+elsif (%Profile_t.@RECORDCOUNT=1) then
+    try
+        VALUE_ID := Gen_ID( 'Данные', 'OD_VALUES_ID_GEN', 1 );
+        ExecSql('Данные', [ insert into OD_VALUES (ID,SYSNAME, NAME, V_TYPE, MFU, IS_IN, ISIN, CFI)
+                            values(:SHARE, :SYSNAME, :NAME, :V_TYPE, :MFU, :IS_IN, :ISIN, :CFI) ],
+                           VALUE_ID, %Profile_t._SYSNAME, %Profile_t._NAME, %Profile_t._V_TYPE, %Profile_t._MFU, %Profile_t._IS_IN, %Profile_t._ISIN, %Profile_t._CFI); 
+        
+        x_shares := %Profile_t.___tShares;
+        x_shares.@First;
+        ExecSql('Данные', [ insert into OD_SHARES( ID, MNEM , BIRTHDATE, DEATHDATE, CLASS, MODE, ISSUER, NOMINAL, ISNUM, NUM_REG, NOM_VAL, ORG_REG , COUNT_, ISSUENUM, LINK, TYPE_ , IS_MARGIN, STATUS , DATE_REG , PMFU,  NOM_TYPE, IS_MCS, SELF_ID, B_DATE , E_DATE , REP_DATE ) 
+                                           values(:ID,:MNEM ,:BIRTHDATE,:DEATHDATE,:CLASS,:MODE,:ISSUER,:NOMINAL,:ISNUM,:NUM_REG,:NOM_VAL,:ORG_REG ,:COUNT_,:ISSUENUM, :LINK, :TYPE_, :IS_MARGIN, :STATUS, :DATE_REG, :PMFU, :NOM_TYPE, :IS_MCS, :SELF_ID , :B_DATE , :E_DATE , :REP_DATE )],
+                            VALUE_ID, x_shares._MNEM , x_shares._BIRTHDATE, x_shares._DEATHDATE, x_shares._CLASS, x_shares._MODE, x_shares._ISSUER, x_shares._NOMINAL, x_shares._ISNUM, x_shares._NUM_REG, 
+                                      x_shares._NOM_VAL, x_shares._ORG_REG , x_shares._COUNT_, x_shares._ISSUENUM, x_shares._LINK, x_shares._TYPE_ , x_shares._IS_MARGIN, x_shares._STATUS , x_shares._DATE_REG , 
+                                      x_shares._PMFU , x_shares._NOM_TYPE , x_shares._IS_MCS , VALUE_ID , x_shares._B_DATE , x_shares._E_DATE , x_shares._REP_DATE);
+        x_shares.@Next;
+        While ~x_shares.@EOF do
+            SHARE_ID := Gen_ID( 'Данные', 'OD_SHARES_ID_GEN', 1 );
+            ExecSql('Данные', [ insert into OD_SHARES( ID, MNEM , BIRTHDATE, DEATHDATE, CLASS, MODE, ISSUER, NOMINAL, ISNUM, NUM_REG, NOM_VAL, ORG_REG , COUNT_, ISSUENUM, LINK, TYPE_ , IS_MARGIN, STATUS , DATE_REG , PMFU, NOM_TYPE, IS_MCS, SELF_ID, B_DATE , E_DATE , REP_DATE ) 
+                                               values(:ID,:MNEM ,:BIRTHDATE,:DEATHDATE,:CLASS,:MODE,:ISSUER,:NOMINAL,:ISNUM,:NUM_REG,:NOM_VAL,:ORG_REG ,:COUNT_,:ISSUENUM, :LINK, :TYPE_, :IS_MARGIN, :STATUS, :DATE_REG, :PMFU, :NOM_TYPE, :IS_MCS, :SELF_ID , :B_DATE , :E_DATE , :REP_DATE )],
+                                SHARE_ID, x_shares._MNEM,    x_shares._BIRTHDATE, x_shares._DEATHDATE, x_shares._CLASS,    x_shares._MODE,   x_shares._ISSUER, x_shares._NOMINAL,   x_shares._ISNUM,  x_shares._NUM_REG, 
+                                          x_shares._NOM_VAL, x_shares._ORG_REG,   x_shares._COUNT_,    x_shares._ISSUENUM, x_shares._LINK,   x_shares._TYPE_ , x_shares._IS_MARGIN, x_shares._STATUS, x_shares._DATE_REG , 
+                                          x_shares._PMFU,    x_shares._NOM_TYPE , x_shares._IS_MCS ,   VALUE_ID ,          x_shares._B_DATE, x_shares._E_DATE, x_shares._REP_DATE);
+            x_shares.@Next;
+        End;    
+        x_meta.@EDIT;
+        x_meta._ID    := VALUE_ID;
+        x_meta._STAMP := now;
+        x_meta._CLASS := 'TShare';
+        x_meta.@POST;
+    except
+        x_meta.@EDIT;
+        x_meta._ID := clear(0);
+        x_meta.@POST;
+        raise([{ "placeType" : "Функция",
+                 "placeName" : "_QA->InsShare_t",
+                 "mess"      : "]+Exception.text+["}]);
+    end
+else
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->InsShare_t",
+             "mess"      : "В профиле финансового инструмента более одной записи."}]);
+
+end;
+
+// if ~isNull(x_codes) then
+//     try
+//         x_codes.@FIRST;
+//         ExecSQL('Данные', [delete from OD_FACE_CODERS where FACE = :F], FACE_ID);
+//         While ~x_codes.@EOF do            
+//             ExecSQL('Данные', [insert into OD_FACE_CODERS(CODER, CODE, FACE) values(:D, :C, :F)], iif(isNull(x_codes._CODER), MyFace, x_codes._CODER), x_codes._CODE, FACE_ID);
+//             x_codes.@NEXT;
+//         End;
+//     except
+//         x_meta.@EDIT;
+//         x_meta._ID := clear(0);
+//         x_meta.@POST;
+//         raise([{ "placeType" : "Функция",
+//                  "placeName" : "_QA->InsShare_t",
+//                  "mess"      : "Ошибка при вставке тикера лица с точки зрения кодировщика ]+ str(x_codes._CODER) + [ ]+Exception.text+["}]);        
+//         //propagate
+//     end;        
+// end;
+VALUE_ID;

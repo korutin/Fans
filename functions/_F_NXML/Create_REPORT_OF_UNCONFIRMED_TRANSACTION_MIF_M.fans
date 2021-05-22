@@ -1,0 +1,228 @@
+//Create_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF_M(
+//      %doc_id:int; 
+//      %reg_num:str; 
+//      %reg_date:DateTime; 
+//      %encoding:str; 
+//      %directory; 
+//      %OEMConvert; 
+//      %LO:List; 
+//      %src: int)
+// Запрос сверки при выдаче паев
+// %doc_id - идентификатор документа "Массовая выдача паев". Экземпляр категории "Массовая выдача паев" это контекст в котором работает
+//           данная функция, то есть она всё знает об этом экземпляре.
+// %LO     - список заявок (ID заявки, Номер документа-заявки, Дата/время заявки, Кол-во паев). Список должен быть отсортирован по Дата/время. Проводки создаются за 
+//           последней заявкой (после всех заявок) и если список будет не отсортирован то это проблемы вызвавшего функцию
+// %src    - откуда будем брать данные про заявки для запроса; 0 - все данные берутся из списка %LO, 1 - данные берутся из экземплряра документа %doc_id из самих заявок
+// 
+// -----------------------------------------------------------------
+// EKS 08.2020
+
+var VERSION := _F_NXML->Get_XSD_Version, WHOS:=_Sys_Setings_F.OD_SETS._WHOS;
+var xmlNAME :='REPORT_OF_UNCONFIRMED_TRANSACTION_MIF';
+var ErrList :='', info_str, DOC_I, out_doc_num, out_doc_date, in_doc_num, in_reg_date, 
+    Prev_O_NUM:='', Prev_O_DATE:=Clear(now), D_CAT_SYS, NUM, D_DATE, DEPO_LS, SUBTYPE,
+    DEPO, SHARE, AMOUNT, NRD, NRD_OGRN, NRD_OGRN_DATE, TRANS_TYPE, CODE_BASE_TRANS, B_REST, E_REST, B_ACC, 
+    Z_NUM, Z_DATE, CR_DATE;
+var counter := 0, k, ptr, itm, q, cnt;
+try
+   NRD:=Extract1('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+except
+   raise("В системе найдено несколько юр.лиц с мнемоникой 'НДЦ'");
+end;
+if IsBlank(NRD) then raise("В системе не найдено юр.лицо с мнемоникой 'НДЦ'"); end;
+
+for 'Данные'
+select [select D.NUM, D.D_DATE
+        from OD_DOC_CATS DC, OD_DOCS D 
+            left join D_IN_MESS M on D.ID=M.DOC
+        where D.D_CAT=DC.ID and D.WHOS=:WHOS and D.KVIT=:KVIT and DC.SYS_NAME='OUT_MESS_NRD' and M.MAIL_PARAM='NRD_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF'
+        order by D.D_DATE desc, D.NUM desc]
+from WHOS, %doc_id
+into Prev_O_NUM, Prev_O_DATE do
+   exit;
+end;
+
+D_CAT_SYS:=Extract('Данные', 'select DC.SYS_NAME from OD_DOCS D left join OD_DOC_CATS DC on DC.ID=D.D_CAT where D.ID=:ID', %doc_id);
+// if (D_CAT_SYS='R_PAI_BUY') or (D_CAT_SYS='R_PAI_SALE') then //распоряжение на выдачу/погашение паев
+//    ExtractSQL('Данные',
+//         [select D.NUM, D.D_DATE, R.B_ACC, C.SUBTYPE, C.ID, R.SHARE, R.AMOUNT, R.B_ACC_ACC, R.O_NUM, R.O_DATE
+//          from OD_DOCS D
+//             left join OD_DOCS DZ on DZ.ID=D.KVIT
+//             left join D_REESTR R on R.DOC=D.ID
+//             left join OD_OPERATORS O on O.USER_ID=USER
+//             left join OD_CLIENTS C on C.PLAN_ID=O.PLAN_ID and C.NUMBER=R.B_ACC
+//          where D.ID=:DOC], %doc_id, NUM, D_DATE, DEPO_LS, SUBTYPE, DEPO, SHARE, AMOUNT, B_ACC_ACC, Z_NUM, Z_DATE);
+//    if IsBlank(Z_NUM) then raise('Не задано основание для внесения записи в реестр'); end;
+//    if SUBTYPE<>102 then raise('Распоряжение должно быть по лицевому счету номинального держателя центрального депозитария'); end;
+//    if D_CAT_SYS='R_PAI_BUY' then //распоряжение на выдачу паев
+//       TRANS_TYPE:='RECE';  //зачисление
+//       CODE_BASE_TRANS:='TR14';
+//    else //распоряжение на погашение паев
+//       TRANS_TYPE:='DELI';  //списание
+//       CODE_BASE_TRANS:='TR15';
+//    end;
+// else
+//    raise('Формирование запроса сверки не предусмотрено для данной категории документов');
+// end;
+
+//=====================к о д и р о в к а====================================
+self.FileName:=_F_XML->Get_File_Name(%directory, %reg_num, %reg_date);
+self.OEMConvert:=%OEMConvert;
+//==========================================================================
+// Подвычислим различные реквизиты
+k    := 0; 
+ptr  := 1;
+TRANS_TYPE      := 'RECE';  //зачисление
+CODE_BASE_TRANS := 'TR14';
+_F_DOC->GetDoc(%doc_id);
+D_DATE          := _F_DOC.GetDoc.D_DATE;
+NUM             := _F_DOC.GetDoc.NUM;
+DEPO_LS         := _F_BUX_OP->GET_OP_VAL(%doc_id, 'DEPO_LS');
+SHARE           := _F_BUX_OP->GET_OP_VAL(%doc_id, 'SHARE'); 
+DEPO            := _F_BUX_OP->GET_OP_VAL(%doc_id, 'DEPO');
+_F_DEPO->GetClient(DEPO);
+B_ACC           := _F_DEPO.GetClient.NUMBER;
+SUBTYPE         := _F_DEPO.GetClient.SUBTYPE;
+
+if SUBTYPE<>102 then raise('Распоряжение должно быть по лицевому счету номинального держателя центрального депозитария'); end;
+// ==========================================================================
+out('<?xml version="1.0" encoding="'+%encoding+'"?>');
+out('<'+xmlNAME+'>');
+
+
+DOC_I:=_F_IN_MESS->EDO_Find_IN_MESS(%doc_id);
+if IsBlank(DOC_I) then
+   out_doc_num:=in_doc_num:='NONREF';
+   out_doc_date:=in_reg_date:=Date('01.01.1900');
+else
+   ExtractSQL('Данные',
+              [select I.THEIR_NUM, I.THEIR_DATE, D.NUM, D.D_DATE
+               from OD_IN_DOCS I, OD_DOCS D
+               where I.DOC=:DOC and I.DOC=D.ID], DOC_I,
+       out_doc_num, out_doc_date, in_doc_num, in_reg_date);
+end;
+_F_NXML->Out_Answer_Doc_t(VERSION, %reg_num, %reg_date, out_doc_num, out_doc_date, in_doc_num, iif(IsBlank(DOC_I), Clear(now), in_reg_date), info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+//указание на предыдущий запрос сверки
+if IsBlank(Prev_O_NUM) then
+   _F_NXML->Out_Ref_dtls_t('previous_ref', 'NONREF', Date('01.01.1900'), '');
+else
+   _F_NXML->Out_Ref_dtls_t('previous_ref', Prev_O_NUM, Prev_O_DATE, '');
+end;
+
+//лицевой счет НДЦД
+_F_NXML->Out_Account_dtls_v02_t('account_dtls_v02', B_ACC, 'NSDR', '',SUBTYPE, '');
+_f_report->GetUFace(NRD, D_DATE);
+NRD_OGRN      := _f_report.GetUFace.OGRN;
+NRD_OGRN_DATE := _f_report.GetUFace.OGRN_DATE;
+//реквизиты НРД
+_F_NXML->Out_Party_identification_t('account_holder_v02', NRD_OGRN, 'OGRN', '', NRD_OGRN_DATE, info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+_F_NXML->Out_Security_info_t('security', SHARE, info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+//D_DATE          := Token(ListGet(%LO, ListCount(%LO) - 1), ';', 3);    // Берем дату/время из последней заявки
+//CR_DATE         := datetime(D_DATE) + 0.00002;
+// -----------------------------------    
+//входящий остаток по пассивным счетам
+B_REST:=Extract('Данные',
+        [select f_Round(sum(T.TYPE_*T.VALUE_), V.MFU)
+        from OD_OPERATORS O
+            left join OD_ACC_PLANS AP on AP.WHOS=O.U_FACE and AP.SYS_NAME='REESTR'
+            left join OD_BALANCES B on B.ACC_PLAN=AP.ID and ACC_TYPE=2
+            left join OD_RESTS R on R.BAL_ACC=B.ID and R.REG_1=:DEPO and R.VALUE_ID=:S
+            left join OD_VALUES V on V.ID=R.VALUE_ID
+            left join OD_TURNS T on T.REST=R.ID and T.WIRDATE>=:D and T.WIRDATE<='01.01.9999'
+        where O.USER_ID=USER and T.IS_PLAN='F'
+        group by V.MFU], DEPO, SHARE, D_DATE);
+if isBlank(B_REST) then B_REST := 0.0; end;
+
+// ---------------------------------------------
+// cnt := 0;
+// if (%src = 1) then
+//     for 'Данные' select [
+//         select dp1.VAL as CLAIM, dp2.VAL as AMOUNT, D.NUM as Z_NUM, D.D_DATE as Z_DATE
+//         from OD_DOLS L
+//             left join D_OP_VAL dp1 on dp1.LINE = L.ID and dp1.DESCR = 19667   /*CLAIM*/
+//             left join D_OP_VAL dp2 on dp2.LINE = L.ID and dp2.DESCR = 19668   /*AMOUNT*/
+//             left join D_B_TRUSTERS T on T.DOC = (case when dp1.VAL is null then null else f_AsInteger(dp1.VAL) end) 
+//             left join OD_DOCS d on d.ID = T.DOC
+//         where L.DOC = :DOC ]
+//     from %doc_id
+//     using q
+//     do
+//         ListAdd(%LO, q._CLAIM + ';' + str(q._Z_NUM) + ';' + str(q._Z_DATE) + ';' + str(q._AMOUNT));
+//         inc(cnt);
+//     end;
+// end;
+
+if (%src = 1) then
+    for 'Данные' select [
+        select dp1.VAL as CLAIM, dp2.VAL as AMOUNT, D.NUM as Z_NUM, D.D_DATE as Z_DATE
+        from OD_DOCS d         
+            left join OD_DOLS L on L.DOC = d.ID
+            left join OP_FIELDS pf1 on pf1.OP = d.D_CAT and pf1.AS_NAME = 'CLAIM'
+            left join OP_FIELDS pf2 on pf2.OP = d.D_CAT and pf2.AS_NAME = 'AMOUNT'            
+            left join D_OP_VAL dp1 on dp1.LINE = L.ID and dp1.DESCR = pf1.ID   /*CLAIM*/
+            left join D_OP_VAL dp2 on dp2.LINE = L.ID and dp2.DESCR = pf2.ID   /*AMOUNT*/
+            left join D_B_TRUSTERS T on T.DOC = (case when dp1.VAL is null then null else f_AsInteger(dp1.VAL) end)             
+        where D.ID = :DOC 
+        order by L.ID ]
+    from %doc_id
+    using q
+    do
+        ListAdd(%LO, q._CLAIM + ';' + str(q._Z_NUM) + ';' + str(q._Z_DATE) + ';' + str(q._AMOUNT));
+        inc(cnt);
+    end;
+end;
+
+
+_F_XML->Out_TAG('total_linked_instructions', str(cnt));
+
+While (k<ListCount(%LO)) do
+    itm    := ListGet(%LO, k);
+    Z_NUM  := Token(itm, ';', 2);
+    Z_DATE := datetime(Token(itm, ';', 3));
+    AMOUNT := float(Token(itm, ';', 4));
+    Out('<transactions_info_mif>');
+    _F_XML->Out_TAG('current_instruction_number', str(ptr));
+    _F_XML->Out_TAG('transaction_type', TRANS_TYPE);
+    _F_XML->Out_TAG('code_base_transactions', CODE_BASE_TRANS);
+    Out('<doc_link_request>');
+    if IsBlank(Z_NUM) then
+        Z_NUM  := 'UKWN';
+        Z_DATE := Date('01.01.1900');
+    end;
+    _F_XML->Out_TAG('doc_num', Z_NUM);
+    _F_NXML->Out_Date_or_Time('doc_date', Str(Z_DATE));
+    Out('</doc_link_request>');
+    _F_NXML->Out_Quantity_In_Unit_t('quantity', AMOUNT, Clear(0), Clear(0));
+    _F_XML->Out_TAG('block_indicator', 'No');
+    E_REST := B_REST + AMOUNT;
+    _F_NXML->Out_Quantity_In_Unit_t('opening_balance', B_REST, Clear(0), Clear(0));
+    _F_NXML->Out_Quantity_In_Unit_t('closing_balance', E_REST, Clear(0), Clear(0));
+    B_REST := E_REST;
+    Out('<processing_info>');
+        _F_NXML->Out_Doc_Link_t('link', in_doc_num, Z_NUM, in_reg_date, Z_DATE);
+        _F_NXML->Out_Date_or_Time('processing_datetime', D_DATE);
+        _F_XML->Out_TAG('processing_reference', NUM);
+    Out('</processing_info>');
+    _F_XML->Out_TAG('owner', DEPO_LS);    // Счет клиента номинального держателя покупателя. Тоже надо где-то хранить (может на Массовой выдаче паев)    
+    Out('</transactions_info_mif>');
+    
+    inc(k);
+    inc(ptr);
+End;
+out('</'+xmlNAME+'>');
+
+if ~IsBlank(ErrList) then raise(ErrList); end;
+
+//Проверяем XML по схеме
+self.@Close;
+if not _F_NXML->XMLCheck(_F_NXML->Get_XSD_Version ,self.FileName, '', info_str) then
+   raise(info_str);
+end;
+
+self.FileName;

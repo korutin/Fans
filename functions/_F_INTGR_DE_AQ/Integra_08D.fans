@@ -1,0 +1,184 @@
+// Integra_08D
+// --------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Интеграционный тест для проверки работы функционала формирования запроса на составление списка владельцев и обработки списка.
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+
+Uses _QA, _TYPES;
+var err_c,  f_date, CrDt_et, result, tEnd, tStart;
+var logK;
+var ISSUER, EMI_UK, SHARE, OWNER_ID1, OWNER_ID2, CLIENT_ID, CLIENT_ID2, CLIENT_ID3, NOMINI_ID, NDCD_CLIENT_ID, ND_CLIENT_ID, NRD_ID, OWNERF_ID3, FBROK_ID, W_ID;
+var __tFace_OW1, __tFace_OWNER2, __tFace_OWNER3, __tFace_FBrok, __tFace_NOMIMI,
+    __tClient_OW1, __tClient_OwnerAcc2, __tClient_OwnerAcc3, __tClient_NominiAcc, 
+    __tFace_UPPER,
+    __tBankProp_item;
+var Rest_Own1, Rest_Own2, Rest_Own3, Rest_Own4, Rest_Own5, OwnCreateMoment, issueMoment;
+var QA_CODE := 'Integra_08', F_ID, SELF_ID, SE1, SE2, SE3, SE4, SE5, SW1, GSSPIS, PLAN_ID, TOP_ID, TOP_CLIENT_ID, UPPER_ID,
+    OW1_ID;
+var AMOUNT_1;
+var T_SHARE_HOLDERS, T_SHARE_BALANCE;
+var their_doc_date, their_doc_num, r_date, resp_date, D_DATE, REQ_ID, DOC_json, LBR, RBR, LSQ, RSQ;
+var x_bankProp;
+// $meta begin
+__tFace_OW1    := _TYPES->tFace;
+__tFace_OWNER2   := _TYPES->tFace;
+__tFace_OWNER3   := _TYPES->tFace;
+__tFace_FBrok    := _TYPES->tFace;
+__tClient_OW1    := _TYPES->tClient;
+__tClient_OwnerAcc2   := _TYPES->tClient;
+__tClient_OwnerAcc3   := _TYPES->tClient;
+__tClient_NominiAcc   := _TYPES->tClient;
+__tFace_NOMIMI   := _TYPES->tFace;
+// $meta end
+
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Временные метки для создания объектов участвующих в тестах
+D_DATE          := now;
+their_doc_date  := now - 1;
+their_doc_num   := '17/985';
+r_date          := D_DATE + 6;
+resp_date       := date(D_DATE + 8);
+CrDt_et         := date('11.01.2020');                // Дата создания всего и вся в справочниках
+OwnCreateMoment := date('11.01.2020');
+issueMoment     := date('11.01.2020');
+f_date    := clear(date('31.12.1899'));
+Rest_Own1 := 2.1232;
+Rest_Own2 := 4.543;
+Rest_Own3 := 1.5;
+Rest_Own4 := 1.9;
+Rest_Own5 := 7.94;
+LBR  := '{'; RBR := '}'; LSQ := '['; RSQ := ']';
+try    
+    GSSPIS := GS_Create;
+    _F_INTGR_DE_AQ->Integra_08b_setUp(CrDt_et, GSSPIS);
+    ISSUER  := _QA->id(GS_VAL(GSSPIS, '__tFace_ISS'));
+    __tFace_UPPER := int(GS_VAL(GSSPIS, '__tFace_UPPER'));
+    NRD_ID  := int(GS_VAL(GSSPIS, 'NRD_ID'));
+    SHARE   := int(GS_VAL(GSSPIS, 'SHARE'));
+    EMI_UK  := int(GS_VAL(GSSPIS, 'EMI_UK'));
+    PLAN_ID := Extract('Данные', [select P.ID from OD_ACC_PLANS P where SYS_NAME = 'DEPO_BANK']);    
+    // -----------------------------------------------------------------------------------------------
+    // Получить юр.лицо - верхнего места хранения
+    //UPPER_ID  := int(GS_VAL(GSSPIS, 'UPPER_ID'));
+    UPPER_ID  := _QA->id(GS_VAL(GSSPIS, '__tFace_UPPER'));
+    _QA->Produce_RandomDepo_t(__tClient_NominiAcc,  List('TYPE_=1', 'SUBTYPE=8', 'NUMBER=*','LINK_NUMBER=Н00004000', 'PLAN_ID='+str(PLAN_ID)));
+    __tClient_NominiAcc.@EDIT;
+    __tClient_NominiAcc._FACE   := UPPER_ID;
+    __tClient_NominiAcc._D_OPEN := OwnCreateMoment;    
+    __tClient_NominiAcc._NAME   := 'Счет <' + __tFace_UPPER._NAME + '>';    
+    __tClient_NominiAcc.@POST;
+    TOP_CLIENT_ID := _QA->InsClient_t(__tClient_NominiAcc);
+    
+    // --------------------------------------------------------------------------
+    OWNER_ID1 := _QA->InsOrLoadFaceByAlias_t( 'IndvFrgnNeRez-01',  CrDt_et, __tFace_OW1);
+    _QA->Produce_RandomDepo_t(__tClient_OW1, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004001'));
+    __tClient_OW1.@EDIT;
+    __tClient_OW1._FACE      := OWNER_ID1;
+    __tClient_OW1._D_OPEN    := CrDt_et;
+    __tClient_OW1._NAME      := __tFace_OW1._NAME;
+    __tClient_OW1.@POST;
+    OW1_ID := _QA->InsClient_t(__tClient_OW1);
+
+    x_bankProp  := __tFace_OW1.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, OW1_ID, __tBankProp_item);    
+    
+
+    // // -----------------------------------------------------------------------------
+    // // Выдать паи владельцу на лицевой счет CLIENT_ID 
+    // SE1 := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, CLIENT_ID, SHARE, Rest_Own, '');
+    // 
+    // // -----------------------------------------------------------------------------
+    // // Выдать паи владельцу на лицевой счет CLIENT_ID2 
+    // SE2 := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, CLIENT_ID2, SHARE, Rest_Own2, '');
+
+    // -----------------------------------------------------------------------------
+    // Выдать паи номинальщику на лицевой счет ND_CLIENT_ID
+    // SE3 := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, UPPER_ID, SHARE, Rest_Own3, '');
+    
+    SW1 := _QA->SetRest_98015_98040(DateTime(issueMoment), TOP_CLIENT_ID, OW1_ID, SHARE, Rest_Own1, 'Начальные остатки для счета депо '+str(__tClient_OW1._NUMBER));
+    // // -----------------------------------------------------------------------------
+    // // Выдать паи номинальщику НРД на лицевой счет NDCD_CLIENT_ID
+    // SE4 := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, NDCD_CLIENT_ID, SHARE, Rest_Own4, '');
+    // 
+    // // -----------------------------------------------------------------------------
+    // // Выдать паи владельцу на лицевой счет CLIENT_ID3
+    // SE5 := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_UK, CLIENT_ID3, SHARE, Rest_Own5, '');
+
+
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;    
+end;
+
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария
+try
+    // Тестируемая функция
+    //$xxxxxxxxxxxx(SELF, ......);
+    dummy
+except
+      //raise('QA-System: Тест '+QA_CODE + ' закончился падением');
+      ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением')
+end;
+
+// if (f_date = Dt_et) then
+//     ListAdd(LOGK, '   B_DATE  = B_DATE_et')
+// else
+//     ListAdd(LOGK, ' * B_DATE  != B_DATE_et {' + str(f_date)+ ' | ' + str(Dt4_et) + ' }');
+//     inc(err_c);
+// end;
+
+// --------------------------------------------------------------------------------
+// Post-condition : Удаляем окружение
+if _F_INTGR_DE_AQ.EnvDestroy = 1 then
+    if ~isBlank(CLIENT_ID) then
+       ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID);
+       ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID);
+    end;
+    if ~isBlank(OWNER_ID1 ) then
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNER_ID1 );
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNER_ID1 );
+    end;
+
+    if ~isBlank(CLIENT_ID2) then
+       ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID2);
+       ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID2);
+    end;
+    if ~isBlank(OWNER_ID2 ) then
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNER_ID2 );
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNER_ID2 );
+    end;
+    
+    if ~isBlank(CLIENT_ID3) then
+       ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID3);
+       ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID3);
+    end;
+    if ~isBlank(OWNERF_ID3 ) then
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNERF_ID3 );
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNERF_ID3 );
+    end;
+    
+end;
+
+
+// -------------------------------------- Оформляем результат --------------------------------------------------------------
+// try
+//     _QA->ResultRegistration(%tt, QA_CODE, result, logK, tStart, Now);
+// except
+//     raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+// end;
+// %tt._result;

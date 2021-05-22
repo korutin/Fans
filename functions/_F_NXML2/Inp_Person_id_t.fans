@@ -1,0 +1,118 @@
+//Inp_Person_id_t( %ds:int; %Way:str; %t_DOCS: int; STATE:int; NATIONALITY:str; DATE_BIRTH:date; BIRTHPLACE:str; DOC_FACE: int; Info: str );
+// Функция-анализатор элемента типа person_id_t
+// Тип описывает физическое лицо и набор идентифицирующих его документов
+// Функция возвращает на выходных параметра 
+// STATE       - гражданство по классификатору Fansy( если удастся определить )
+// NATIONALITY - гражданство в сыром виде извлеченное из документа
+// DATE_BIRTH  - дата рождения
+// BIRTHPLACE  - место рождения
+// %t_DOCS     - таблица с идентифицирующими документами формата Table(DOC_TYPE int, person_document_type_code str, narrative str, doc_num str, dtls_together str, dtls_apart_ser str, dtls_apart_num str, doc_date date, org str, place str)
+//                                   DOC_TYPE - код документа с точки зрения справочников Fansy
+//                  person_document_type_code - код документа такой каким его достали из XML
+//                                  narrative - сюда записывается текстовое описание кода с точки зрения форматов FCDR_2017_2, если person_document_type_code = '00' (Прочее), то здесь содержится описание этого прочее из элемента.          
+// Info       - строка с ошибками
+// EKS 11.2020
+
+var W    := '', x_person_id, SearchL, Inf, SELF_ID, cnt, FindL,
+    DOC_TYPE, pers_doc_type_code, narrative, doc_num, dtls_together, dtls_apart_ser, dtls_apart_num, doc_date, org, place;
+STATE       := clear(0);
+NATIONALITY := clear('');
+Info        := '';
+DATE_BIRTH  := clear(date('31.12.1899'));
+BIRTHPLACE  := clear('');
+DOC_FACE    := clear(0);
+
+FindL       := List();
+
+TableClear(%t_DOCS);
+if (%ds.?person_id) then
+    x_person_id := %ds._person_id;
+    W := _F_NXML2->Add_Way(%Way, 'person_id');
+    While ~x_person_id.@EOF do
+        %t_DOCS.@APPEND;
+        _F_NXML2->Inp_person_document_t(x_person_id, W, %t_DOCS._DOC_TYPE, %t_DOCS._person_document_type_code, %t_DOCS._narrative, %t_DOCS._doc_num, %t_DOCS._dtls_together, 
+                                        %t_DOCS._dtls_apart_ser, %t_DOCS._dtls_apart_num, %t_DOCS._doc_date, %t_DOCS._org, %t_DOCS._place, Info);
+        %t_DOCS.@POST;  
+        
+        Inf     := '';
+        SELF_ID := clear(0);
+        cnt     := 0;
+        SearchL := List('DOC_TYPE='+str(%t_DOCS._DOC_TYPE));
+        if %t_DOCS._DOC_TYPE =24 then
+            if %t_DOCS._person_document_type_code = '28' then
+                ListAdd(SearchL, 'PENSNUM='+str(%t_DOCS._doc_num));
+            end;
+        else
+            if ~isBlank(%t_DOCS._doc_num) then
+                ListAdd(SearchL, 'DOC_NUM='+%t_DOCS._doc_num);
+            elsif ~isBlank(%t_DOCS._%t_DOCS._dtls_apart_ser) or ~isBlank(%t_DOCS._dtls_apart_num) then
+                ListAdd(SearchL, 'DOC_SER='+iif(isBlank(%t_DOCS._%t_DOCS._dtls_apart_ser),'',%t_DOCS._%t_DOCS._dtls_apart_ser));
+                ListAdd(SearchL, 'DOC_NUM='+iif(isBlank(%t_DOCS._%t_DOCS._dtls_apart_num),'',%t_DOCS._%t_DOCS._dtls_apart_num));
+            elsif ~isBlank(%t_DOCS._dtls_together) then
+                //поиск по спаренной строке. как сделать с помощью FIND_FACE не понятно. скорее всего не возможно.
+                dummy;
+            else
+                dummy;  // такого не может быть.
+            end;
+        end;
+        
+        if ~isBlank(%t_DOCS._doc_date) then
+            ListAdd(SearchL, 'DOC_DAT='+str(%t_DOCS._doc_date));
+        end;
+        
+        if ~isBlank(%t_DOCS._place) then
+            ListAdd(SearchL, 'DOC_PLACE='+str(%t_DOCS._place));
+        end;
+        
+        SELF_ID := _F_IN_MESS->FIND_FACE( SearchL, 0, 0, cnt, Inf);
+        if cnt>1 or cnt=0 then
+            // чо делать? браковать весь Person_id со всеми вложенными идентификационными документами, или считать только этот документ ,по которому нашлось более 1 лица бракованным????
+            SELF_ID := clear(0)
+        else
+            if ~isBlank(SELF_ID) then
+                if ~(SELF_ID in FindL) then 
+                    ListAdd(FindL, SELF_ID);
+                end;
+            end;        
+        end;        
+        
+        // _F_NXML2->Inp_person_document_t(x_person_id, W, DOC_TYPE, pers_doc_type_code, narrative, doc_num, dtls_together, dtls_apart_ser, dtls_apart_num, doc_date, org, place, Info);
+        // %t_DOCS.@APPEND;
+        // %t_DOCS._DOC_TYPE := DOC_TYPE;
+        // %t_DOCS._person_document_type_code := pers_doc_type_code;
+        // %t_DOCS._narrative := narrative;
+        // %t_DOCS._doc_num := doc_num;
+        // %t_DOCS._dtls_together := dtls_together;
+        // %t_DOCS._dtls_apart_ser := dtls_apart_ser;
+        // %t_DOCS._dtls_apart_num := dtls_apart_num;
+        // %t_DOCS._doc_date := doc_date;
+        // %t_DOCS._org := org;
+        // %t_DOCS._place := place;        
+        // %t_DOCS.@POST;
+        x_person_id.@Next;
+    End
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не удалось обнаружить ни одного из обязательных элементов person_id'));   
+end;
+
+if %ds.?nationality then
+    NATIONALITY := %ds._nationality;
+    STATE       := clear(0);
+end;
+if %ds.?birthday then
+    DATE_BIRTH:= Date(_F_XML->Get_DateTime( %ds._birthday ));     
+end;
+if %ds.?birthplace then
+    BIRTHPLACE:= %ds._birthplace;
+end;
+
+if ListCount(FindL)=1 then
+    DOC_FACE := Int(ListGet(FindL, 0));
+elsif (ListCount(FindL)>1) then
+    DOC_FACE := clear(0);
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'По указанным идентификационным данным в элементе '+%Way+' в справочнике обнаружено несколько разных субъектов '));
+else
+    DOC_FACE := clear(0);
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'По указанным идентификационным данным в элементе '+%Way+' в справочнике никого не обнаружено'));    
+end;
+DOC_FACE;

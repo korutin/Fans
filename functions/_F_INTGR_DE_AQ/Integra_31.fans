@@ -1,0 +1,185 @@
+// Integra_31
+// --------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Parse_DISCLOSURE_REQUEST():AnyType
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+var err_c,  f_date, CrDt_et, result, tEnd, tStart;
+var logK, DOC_json, z ;
+var ISSUER, EMI_UK, SHARE, OWNER_ID, OWNER_ID2, CLIENT_ID, CLIENT_ID2, CLIENT_ID3, NOMINI_ID, NCLIENT_ID, NRD_ID, GSSPIS;
+var __tFace_OWNER, __tFace_OWNER2, __tFace_OWNER3, __tClient_OwnerAcc, __tClient_OwnerAcc2, __tClient_OwnerAcc3, __tFace_NOMIMI,__tClient_NominiAcc;
+var Rest_Own, Rest_Own2, Rest_Own3, Rest_Own4, OwnCreateMoment, issueMoment, resp_date, r_date, their_doc_date, their_doc_num, D_DATE, REQ_ID;
+var QA_CODE := 'Integra_31', F_ID, SELF_ID, SE1, SE2, SE3, T_SHARE_HOLDERS, T_SHARE_BALANCE, T_OPERATIONS;
+var LBR, RBR, LSQ, RSQ;
+
+breakpoint;
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Создание Лица с указанием его реквизитов напрямую
+T_SHARE_HOLDERS  := Table(DEPO_1 int, DEPO_1_NAME str, BANK_P_NAME str, FACE_INN str, BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str, ACCOUNT_TYPE int, ACCOUNT_TYPE_NARR str);
+T_SHARE_BALANCE  := Table(DEPO_2 int, DEPO_2_NAME str, SHARE_2_ID int, AMOUNT float, BLOCK_AMOUNT float, ZALOG_AMOUNT float, PLAC_AMOUNT float, BLFL_AMOUNT float, BLTR_AMOUNT float, BLIN_AMOUNT float, 
+                                                                                     BLFC_AMOUNT  float, BLRO_AMOUNT float, BLCV_AMOUNT float);
+LBR  := '{'; RBR := '}'; LSQ := '['; RSQ := ']';
+CrDt_et          := date('11.01.2020');                // Дата создания всего в справочниках
+OwnCreateMoment  := date('11.01.2020');
+issueMoment      := date('11.01.2020');
+f_date           := clear(date('31.12.1899'));
+Rest_Own         := 2.1232;
+their_doc_num    := 'NRD_NOMER_ZAPROS';
+their_doc_date   := date('01.02.2021');
+r_date           := date('07.02.2021');
+resp_date        := date('12.02.2021');
+D_DATE           := now;
+
+try 
+    // T_BASIS_REQUEST  := Table(bais_of_request str, narrative str, subordinate_leg List);
+    // T_SHARE_HOLDERS  := Table(DEPO_1 int, DEPO_1_NAME str, BANK_P_NAME str, FACE_INN str, BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str, ACCOUNT_TYPE int, ACCOUNT_TYPE_NARR str);
+    // T_SHARE_BALANCE := Table(DEPO_2 int, DEPO_2_NAME str, SHARE_2_ID int, AMOUNT float, BLOCK_AMOUNT float, ZALOG_AMOUNT float, PLAC_AMOUNT float, BLFL_AMOUNT float, BLTR_AMOUNT float, BLIN_AMOUNT float, 
+    //                                                                                           BLFC_AMOUNT  float, BLRO_AMOUNT float, BLCV_AMOUNT float);
+    GSSPIS := GS_Create;
+    _F_INTGR_DE_AQ->Integra_31_setUp(CrDt_et, GSSPIS);
+    ISSUER := _QA->id(GS_VAL(GSSPIS, '__tFace_ISS'));
+    // EMI_UK := _F_INTGR_REE_AQ.Integra_08_setUp.EMI_UK;
+    // SHARE  := _F_INTGR_REE_AQ.Integra_08_setUp.SHARE;
+    // NRD_ID := _F_INTGR_REE_AQ.Integra_08_setUp.NRD_ID;
+    TableClear(T_SHARE_HOLDERS);
+    T_SHARE_HOLDERS.@APPEND;
+    T_SHARE_HOLDERS._DEPO_1            := _QA->id(GS_VAL(GSSPIS, '__tClient_PLACE'));
+    T_SHARE_HOLDERS._ACCOUNT_TYPE      := 13;
+    T_SHARE_HOLDERS._ACCOUNT_TYPE_NARR := 'Оранжевый тип счету';
+    T_SHARE_HOLDERS.@POST;
+
+    TableClear(T_SHARE_BALANCE);
+    T_SHARE_BALANCE.@APPEND;
+    T_SHARE_BALANCE._DEPO_2      := _QA->id(GS_VAL(GSSPIS, '__tClient_PLACE'));
+    T_SHARE_BALANCE._SHARE_2_ID  := _QA->id(GS_VAL(GSSPIS, '__tShare_SHAREA'));
+    T_SHARE_BALANCE._AMOUNT      := int(GS_VAL(GSSPIS, 'AMOUNT_A'))+ int(GS_VAL(GSSPIS, 'AMOUNT_B'))+ int(GS_VAL(GSSPIS, 'AMOUNT_C'))+ int(GS_VAL(GSSPIS, 'AMOUNT_D'));
+    T_SHARE_BALANCE.@POST;
+    T_SHARE_BALANCE.@APPEND;
+    T_SHARE_BALANCE._DEPO_2      := _QA->id(GS_VAL(GSSPIS, '__tClient_PLACE'));
+    T_SHARE_BALANCE._SHARE_2_ID  := _QA->id(GS_VAL(GSSPIS, '__tShare_SHAREB'));
+    T_SHARE_BALANCE._AMOUNT      := int(GS_VAL(GSSPIS, 'AMOUNT_E'));
+    T_SHARE_BALANCE.@POST;    
+    
+    // -----------------------------------------------------------------------------
+    DOC_json := LBR+[
+                     "CA_REFERENCE"  : "CA_092332425",
+                     "MESS_FUNC"     : "NEWM",
+                     "ISSUER"        : ]+str(ISSUER)+[,  
+                     "INI_TYPE"      : "ISSR",
+                     "INI_TYPE_NARR" : "",
+                     "INFO_TYPE"     : "RGHL",
+                     "INFO_TYPE_NARRATIVE" : "",
+                     "FROM_FACE"     : ] + str(MyFace) + [, 
+                     "B_TYPE"        : 40, 
+                     "B_DATE"        : "]+ str(their_doc_date)+[",
+                     "B_NUM"         : "]+ their_doc_num +[",
+                     "IS_BANKREQ"    : true,
+                     "TEMPLATE"      : "0014",
+                     "R_DATE"        : "] + str(r_date)+[",
+                     "RESPONSE_DATE" : "] + str(resp_date) +[",
+                     "_SHAREHOLDERS" : ] + LSQ + _F_NXML2->TabletoJSON(T_SHARE_HOLDERS) + RSQ + [,
+                     "_BALANCE"      : ] + LSQ + _F_NXML2->TabletoJSON(T_SHARE_BALANCE) + RSQ + [,
+                     "_BASIS"        : ] + LSQ +  [
+                                        {
+                                          "GROUND_CODE"   : "OTHR",
+                                          "NARRATIVE"     : "Для исполнения эмитентом обязанностей, предусмотренных  п. 14 ст. 7 ФЗ от 07.08.2001 №115-ФЗ",
+                                          "GROUND_NAME"   : "GROUND_NAME 1",
+                                          "__SUBORDINATE" : ]+LSQ+[ "SA01", "SA02", "SA03" ] + RSQ + [
+                                        },
+                                        {
+                                          "GROUND_CODE"   : "RGHD",
+                                          "NARRATIVE"     : "Предоставление списка лиц, осуществляющих права по ценным бумагам (статья 8.7-1 ФЗ О РЦБ)",
+                                          "GROUND_NAME"   : "GROUND_NAME 2",
+                                          "__SUBORDINATE" : ]+LSQ+[ "SU01" ,"SU02" ] + RSQ + [
+                                        } ] +
+                     RSQ + #13+#10+
+                RBR;
+                //      "_BALANCE"      : ] + LSQ + _F_NXML2->TabletoJSON(T_SHARE_BALANCE) + RSQ + [,
+                //      "_BASIS"        : ] + LSQ + [] + RSQ + #13+#10+
+                // RBR;                
+    try                    
+        REQ_ID  := _F_NXML2->Make_I_DISCLOSURE_REQ_json(AnsiToUTF8(DOC_json), D_DATE, 'BEGIN_AUTO', clear(0) {%KVIT});
+    except
+        raise('Неизвестная ошибка при создании документа Запрос на сбор списка/информации о лицах');
+        //propagate;
+    end;        
+    
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;
+end;
+
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария
+try
+    // Сценарий
+    z       := _F_DOC->Exec_Doc_Dir_BySysName( REQ_ID, clear(0), 'CREATE_OPERATIONS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось выполнить директиву "Создать  операции формирования списка". Код ошибки:' + str(z)); end;
+    
+    // ---------------------------------------------------------------------------------------------------
+    T_OPERATIONS := TableFromSQL('Данные', [select D.ID AS DOC_ID from OD_DOCS D where D.KVIT = :KV], REQ_ID);
+    T_OPERATIONS.@First;
+    While ~T_OPERATIONS.@EOF do
+        z := _F_DOC->Exec_Doc_Dir_BySysName( T_OPERATIONS._DOC_ID, clear(0), 'TO_FORM_LOCAL', 1{%mute - гасить});
+        T_OPERATIONS.@Next;
+    End;    
+    
+    // ---------------------------------------------------------------------------------------------------
+    z := _F_DOC->Exec_Doc_Dir_BySysName( REQ_ID, clear(0), 'TRANSLATE_DOWN', 1{%mute - гасить});    
+except
+      //raise('QA-System: Тест '+QA_CODE + ' закончился падением');
+      ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением')
+end;
+
+message('Интеграционный тест Integra_30 закончился успешно.');
+// --------------------------------------------------------------------------------
+// Post-condition : Удаляем окружение
+if _F_INTGR_DE_AQ.EnvDestroy = 1 then
+    // if ~isBlank(CLIENT_ID) then
+    //    ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID);
+    //    ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID);
+    // end;
+    // if ~isBlank(OWNER_ID ) then
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNER_ID );
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNER_ID );
+    // end;
+    // 
+    // if ~isBlank(CLIENT_ID2) then
+    //    ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID2);
+    //    ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID2);
+    // end;
+    // if ~isBlank(OWNER_ID2 ) then
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNER_ID2 );
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNER_ID2 );
+    // end;
+    // 
+    // if ~isBlank(CLIENT_ID3) then
+    //    ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], CLIENT_ID3);
+    //    ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], CLIENT_ID3);
+    // end;
+    // if ~isBlank(OWNERF_ID3 ) then
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], OWNERF_ID3 );
+    //     ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], OWNERF_ID3 );
+    // end;
+    dummy
+end;
+
+// -------------------------------------- Оформляем результат --------------------------------------------------------------
+// try
+//     _QA->ResultRegistration(%tt, QA_CODE, result, logK, tStart, Now);
+// except
+//     raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+// end;
+// %tt._result;

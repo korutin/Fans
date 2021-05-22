@@ -1,0 +1,21 @@
+//Inp_Person_dtls_t(%ds:int;%Way:str; %t_DOCS:int; STATE:int; NATIONALITY:str; DATE_BIRTH:date; BIRTHPLACE:str; unknown:str; DOC_FACE:int; Info:str)
+// t_DOCS - таблицы с документами вида (DOC_TYPE int, person_document_type_code str, narrative str, doc_num str, dtls_together str, dtls_apart_ser str, dtls_apart_num str, doc_date date, org str, place str)
+
+// EKS 11.2020
+var Inf:='', W:='', x_unknown, DOCS, x_person_info;
+Info     := ''; 
+DOC_FACE := clear(0);
+TableClear(%t_DOCS);
+// DOCS := Table(DOC_TYPE int, person_document_type_code str, narrative str, doc_num str, dtls_together str, dtls_apart_ser str, dtls_apart_num str, doc_date date, org str, place str);
+if (%ds.?person_info) then
+    x_person_info := %ds._person_info;
+    W := _F_NXML2->Add_Way(%Way, 'person_info');
+    _F_NXML2->Inp_Person_id_t(x_person_info, W, %t_DOCS, STATE, NATIONALITY, DATE_BIRTH, BIRTHPLACE, DOC_FACE, Inf);
+elsif (%ds.?unknown) then
+    x_unknown := %ds._unknown;
+    unknown := x_unknown._narrative;
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Нарушена структура элемента типа person_dtls_t'));
+end;
+
+0

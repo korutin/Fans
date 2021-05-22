@@ -1,0 +1,23 @@
+//Out_security_balance_v03_by_T(%Tag:Str, %D:Date, %COAF:Str, %T, %Way:Str, Info:Str)
+//Вывод блока security_balance_t_v03 в тэг %Tag
+//SEG
+
+var InfoFrom, LBlocked;
+
+Info:='';
+
+%T.@FIRST;
+while ~%T.@EOF do
+   LBlocked:=List();
+   if %T._ZAmount<>0 then
+      ListAdd(LBlocked, Str(%T._ZAmount)+';;;;;COLO;;;;;');
+   end;
+   if %T._BAmount<>0 then
+      ListAdd(LBlocked, Str(%T._BAmount)+';;;;;OTHR;в блокировке;;;;');
+   end;
+   _F_NXML2->Out_security_balance_v03(%Tag, %D, %T._SHARE, %COAF, '', '', %T._Amount, Clear(0), Clear(0), '', Clear(0), LBlocked, %Way, InfoFrom);
+   Info:=_F_XML->Add_Info(Info, InfoFrom);
+   %T.@NEXT;
+end;   
+
+0;

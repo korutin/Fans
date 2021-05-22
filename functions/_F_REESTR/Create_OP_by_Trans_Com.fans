@@ -1,0 +1,148 @@
+//Create_OP_by_Trans_Com(%doc_id)
+//Создание операции из директивы передаточного распоряжения
+//SEG
+
+var NUM, D_DATE, SEND_B_ACC, TAKE_B_ACC, AMOUNT, SHARE, FUND, SUMMA, TAKE_ACC_DEPO, SEND_ACC_DEPO,
+    AGENT, IS_PART, AMNT, ZALOG, NEW_DOC, E_DOC, DOC_NUM, DOC_DATE, IN_NUM, IN_D_DATE,
+    REST_AMOUNT, tbl:=Table(reg_2 str, amount float);
+var form;
+ExtractSQL('Данные',
+           [select d.NUM, d.D_DATE, z.AMOUNT, z.FUND, z.SUMMA, z.IS_PART,
+                   SEND_C.ID, TAKE_C.ID, z.ACC_DEPO, z.ACC_DEPO_2, z.AGENT, SE.A_DOC,
+                   F.DOC_NUM, F.DOC_DATE, DF.NUM, DF.D_DATE
+            from OD_DOCS d
+              left join D_Z_DOCS z on z.DOC=d.ID
+              left join OD_OPERATORS O on O.USER_ID=USER
+              left join OD_CLIENTS SEND_C on SEND_C.PLAN_ID=O.PLAN_ID and SEND_C.NUMBER=z.DEPO_LS
+              left join OD_CLIENTS TAKE_C on TAKE_C.PLAN_ID=O.PLAN_ID and TAKE_C.NUMBER=z.DEPO_LS_TO
+              left join OD_STEPS SE on SE.DOC=D.ID and SE.S_TYPE=0 and SE.ERR_CODE=2002
+              
+              left join OD_STEPS S on S.DOC=D.ID and S.S_TYPE=0 and S.ERR_CODE=2004
+              left join D_FILER F on F.DOC=S.A_DOC
+              left join OD_DOCS DF on DF.ID=F.DOC              
+            where d.ID=:ID], %DOC_ID,
+     NUM, D_DATE, AMOUNT, FUND, SUMMA, IS_PART,
+     SEND_B_ACC, TAKE_B_ACC, TAKE_ACC_DEPO, SEND_ACC_DEPO, AGENT, E_DOC,
+     DOC_NUM, DOC_DATE, IN_NUM, IN_D_DATE);
+
+if (~isBlank(DOC_NUM)) then
+    NUM := DOC_NUM; D_DATE := DOC_DATE;   // если не пуст номер оригинала, берем его
+elsif (~isBlank(IN_NUM)) then
+    NUM := IN_NUM; D_DATE := IN_D_DATE;   // если не пуст номер входящего, берем его
+else
+    dummy;                                // в противном случае берем номер самого документа - Передаточное распоряжение    
+end;
+
+for 'Данные'
+select [select max(ID) from OD_SHARES where ISSUER=:ISSUER and ID=SELF_ID]
+from FUND
+into SHARE do
+  exit;
+end;
+
+if IS_PART=2 then  //являются предметом залога
+
+  //цикл по остаткам балансового счета, отвечающий за ограничение обращения
+  //цель: заполнение временной таблицы количествами
+  for 'Данные' select
+      [select sum(t.VALUE_*t.TYPE_) as AMOUNT, r.REG_2
+       from OD_OPERATORS o
+         left join OD_ACC_PLANS p on p.WHOS=o.U_FACE and p.SYS_NAME='REESTR'
+         left join OD_BALANCES b on b.ACC_PLAN=p.ID and b.SYS_NAME='30.5'
+         left join OD_RESTS r on r.BAL_ACC=b.ID and r.REG_1=:CLIENT and R.VALUE_ID=:SHARE
+         left join OD_TURNS t on t.REST=r.ID and t.WIRDATE>=:E_DATE
+       where o.USER_ID=USER
+       group by r.REG_2
+       having sum(t.VALUE_*t.TYPE_) <>0
+       order by r.REG_2]
+  from SEND_B_ACC, SHARE, D_DATE
+  into AMNT, ZALOG do
+     if (AMNT<>0) then
+        for 'Данные' select [select DOC from E_LINK_DOCS(:DOC,2001) where SYS_NAME='D_E_ZALOGS' and DEPO_ACC=:FROM_DEPO]
+        from ZALOG, SEND_B_ACC into NEW_DOC do
+            if NEW_DOC=E_DOC then  //наше условия залога (E_DOC) входит в условия обременений (ZALOG)
+                 if TableFind(tbl,'REG_2='+ZALOG) then
+                   tbl.@edit; tbl._AMOUNT:=tbl._AMOUNT+AMNT; tbl.@post;
+                 else
+                   TableInsert (tbl, List('REG_2='+ZALOG, 'AMOUNT='+AMNT))
+                 end;
+            end;
+        end;
+     end;
+  end;
+  if tbl.@recordcount=0 then
+     raise('Отсутствует '+_f_report->GetShare(SHARE)+' в ограниченном обращении на дату '+Str(D_DATE));
+  end;
+
+  //цикл по временной таблице и генерация операций. Операций может быть несколько, если условия залога входит в несколько условий обременений
+  REST_AMOUNT:=Float(AMOUNT); //сумма кол-в, по всем генерируемым операциям, должна равнять количеству из распоряжения
+  tbl.@first;
+  while ~tbl.@EOF do
+
+     form := _f_doc->CREATE_DOC( 'OP_R_INV_PEREVOD' );
+
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'KVIT', %DOC_ID );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'AGENT', AGENT );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_TYPE', 2 );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_DATE', D_DATE );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_NUM', NUM );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'DEPO', SEND_B_ACC );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'TO_DEPO', TAKE_B_ACC );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'SHARE', SHARE );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'OLD_CONDITIONS', tbl._REG_2 );
+     if  tbl._AMOUNT<=REST_AMOUNT then
+         AMOUNT:=tbl._AMOUNT;
+     else
+         AMOUNT:=REST_AMOUNT;
+     end;
+     REST_AMOUNT:=REST_AMOUNT-AMOUNT;
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'AMOUNT', AMOUNT );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'SUMMA', SUMMA );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'TO_DEPO_ACC', TAKE_ACC_DEPO );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'DEPO_ACC', SEND_ACC_DEPO );
+     _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'STATE', 0 );
+
+     try
+        _f_doc->SAVE_DOC( form, 'D_OPERATION' );
+     except dummy end;
+     if Eval( 'evaluate', form+'.D_OPERATION.@ISINSERT' ) then
+        Eval( 'evaluate', form+'.D_OPERATION.@RESTORE' );
+        close( form );
+        return( 1 ) //Не все поля заполнены правильно
+     end;
+
+     tbl.@next;
+  end;
+
+else //не обременены никакими обязательствами
+
+  form := _f_doc->CREATE_DOC( 'OP_R_INV_PEREVOD' );
+
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'KVIT', %DOC_ID );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'AGENT', AGENT );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_TYPE', 2 );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_DATE', D_DATE );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'B_NUM', NUM );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'DEPO', SEND_B_ACC );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'TO_DEPO', TAKE_B_ACC );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'SHARE', SHARE );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'AMOUNT', AMOUNT );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'SUMMA', SUMMA );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'TO_DEPO_ACC', TAKE_ACC_DEPO );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'DEPO_ACC', SEND_ACC_DEPO );
+  //_f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'ZALOG', SEND_ZALOG );
+  //_f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'TO_ZALOG', TAKE_ZALOG );
+  _f_doc->MODIFY_DOC_FIELD( form, 'D_OPERATION', 'STATE', 0 );
+
+  try
+     _f_doc->SAVE_DOC( form, 'D_OPERATION' );
+  except dummy end;
+  if Eval( 'evaluate', form+'.D_OPERATION.@ISINSERT' ) then
+     Eval( 'evaluate', form+'.D_OPERATION.@RESTORE' );
+     close( form );
+     return( 1 ) //Не все поля заполнены правильно
+  end;
+
+end;
+
+0

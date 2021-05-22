@@ -1,0 +1,20 @@
+//GetFaceByMNEM(%mnem:string; %dt: DateTime; face, s_type: integer; INN, OGRN: str)
+// ------------------------------------------------------------------------
+// EKS 12.2019
+
+var i:=0;
+face:=0; s_type := clear(0); INN:= clear(''); OGRN := clear('');
+SelectSQL( 'Данные','select SELF_ID from OD_FACES where MNEM=:MNEM and LAST_FLAG=1', %mnem, face, inc(i) );
+if i>1 then
+   Raise('Найдено более одного субъектов с мнемоникой: '+%mnem);
+elsif (i = 1) then
+   _F_REPORT->GetFace(face, %dt);
+   s_type := _F_REPORT.GetFace.s_type;
+   inn := _F_REPORT.GetFace.inn;
+   if (s_type=1) then
+       _F_REPORT->GetUFace(face, %dt);
+       OGRN := _F_REPORT.GetUFace.OGRN;
+   end;
+end;
+
+face;

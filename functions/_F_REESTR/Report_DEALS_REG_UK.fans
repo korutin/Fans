@@ -1,0 +1,132 @@
+// Report_DEALS_REG_UK(%D_OP_LINES, %D_OP_LINES_3, %T, %T3:int;%Rep_D:Date)
+// ------------------------------------------------------------------
+// Функция упаковывает содержимое выборок D_OP_LINES, D_OP_LINES_3 из операции "Формирование списка лиц" в таблицы %T и %T3 соответственно.
+// по каждому лицевому счету из выборки %D_OP_LINES собирается дополнительная информация имеющаяся в справочнике лицевых счетов.
+// %T  -  Table(    No str, DEPO_AMOUNT float, DEPO_AMOUNT_OBR float, DEPO int, FOR_OPEN str, DEPO_NAME str, CL_NUMBER str, CL_FACE int, CL_F_DATE datetime, CL_SUBTYPE int, 
+//                  CL_STATE int, CL_STATE_NAME str, SUBTYPE_NAME str, EXT_FACE int, CL_INCOME_MOD int, CL_INCOME_ACC int, 
+//                  FULL_NAME str, NAME str, HOME_ADR str, MAIL_ADR str, CL_BANK_AREQ str,
+//                  BANK_AREQ_1 str, BANK_AREQ_2 str, BANK_AREQ_3 str, BANK_AREQ_4 str,
+//                  DOC_ALL_1 str, DOC_ALL_2 str, DOC_ALL_3 str, DOC_ALL_4 str,
+//                  HOME_ADR_1 str, HOME_ADR_2 str, HOME_ADR_3 str, HOME_ADR_4 str,
+//                  MAIL_ADR_1 str, MAIL_ADR_2 str, MAIL_ADR_3 str, MAIL_ADR_4 str,
+//                  INN_1 str, INN_2 str, INN_3 str, INN_4 str,
+//                  SELF_ID_1 int, SELF_ID_2 int, SELF_ID_3 int, SELF_ID_4 int
+//               );
+//                  
+// %T3 -  Table(  No str, AMOUNT_ float, EXT_FACE_ int, OWNERID str, NAME str, DOC_ALL str, HOME_ADR str, MAIL_ADR str, BANK_AREQ str, 
+//                FOR_INNER_DEPO_NUMBER str, FOR_INNER_DEPO int, DEPO_TYPE_3_NAME str, OWNER_INN str, OWNER_MAIL_ADR str)
+//
+// EKS 11.2019
+
+var i, item, L,
+    c_docs_all, c_ADRESSES, c_mail_adresses, c_faces,
+    DOC, A_DOC, BANK_NAME, BANK_CITY, BANK_BIC, BANK_INN, BANK_KORR, ACC_RS, ACC_DEPART, BANK_P_NAME, ACC_LS, SELF_ID;
+TableClear(%T);
+
+%D_OP_LINES.@First;
+While (~%D_OP_LINES.@EOF) do
+    if (%D_OP_LINES._DEPO=98633) then breakpoint; end;
+    L := List();
+    ListAdd(L, 'DEPO_AMOUNT='+str(%D_OP_LINES._DEPO_AMOUNT));
+    ListAdd(L, 'DEPO=' + str(%D_OP_LINES._DEPO));
+    ListAdd(L, 'FOR_OPEN='  + str(%D_OP_LINES._FOR_OPEN));
+    ListAdd(L, 'DEPO_NAME=' + str(%D_OP_LINES._DEPO_NAME));    
+    // --------------------------------------------------------------    
+    _F_DEPO->GetClient(%D_OP_LINES._DEPO);
+    ListAdd(L, 'CL_FACE='    + str(_F_DEPO.GetClient.FACE));
+    ListAdd(L, 'CL_F_DATE=' + str(_F_DEPO.GetClient.F_DATE));
+    ListAdd(L, 'CL_SUBTYPE=' + str(_F_DEPO.GetClient.SUBTYPE));
+    ListAdd(L, 'SUBTYPE_NAME=' + str(_F_DEPO.GetClient.SUBTYPE_NAME));
+
+    ListAdd(L, 'CL_INCOME_MOD='+ str(_F_DEPO.GetClient.INCOME_MOD));
+    ListAdd(L, 'CL_INCOME_ACC='+ str(_F_DEPO.GetClient.INCOME_ACC));
+    // --------------------------------------------------------------    
+    ListAdd(L, 'EXT_FACE='  + str(%D_OP_LINES._EXT_FACE));    
+    // --------------------------------------------------------------    
+    c_docs_all := c_ADRESSES := c_mail_adresses := c_faces := 0;
+    _f_report->CoOwners(%D_OP_LINES._DEPO,_F_DEPO.GetClient.F_DATE, %Rep_D);
+    //c_docs_all      := ListCount(_f_report.CoOwners.docs_all);
+    //c_ADRESSES      := ListCount(_f_report.CoOwners.ADRESSES);
+    //c_mail_adresses := ListCount(_f_report.CoOwners.mail_adresses);
+    //c_faces         := ListCount(_f_report.CoOwners.faces);
+    //if (c_faces+c_mail_adresses+c_ADRESSES+c_docs_all>0) then
+    i := 0 ; While (i<ListCount(_f_report.CoOwners.docs_all)) do
+                 item := ListGet(_f_report.CoOwners.docs_all, i);
+                 if ~isBlank(item) then
+                     Eval('', [ListAdd(L, 'DOC_ALL_] + str(i+1) + [=] + item + [');]);
+                 end;
+                 inc(i);
+             End;
+    i := 0 ; While (i<ListCount(_f_report.CoOwners.ADRESSES)) do
+                 item := ListGet(_f_report.CoOwners.ADRESSES, i);
+                 if ~isBlank(item) then
+                     Eval('', [ListAdd(L, 'HOME_ADR_] + str(i+1) + [=] + item + [');]);
+                 end;
+                 inc(i);
+             End;
+    i := 0 ; While (i<ListCount(_f_report.CoOwners.mail_adresses)) do
+                 item := ListGet(_f_report.CoOwners.mail_adresses, i);
+                 if ~isBlank(item) then
+                     Eval('', [ListAdd(L, 'MAIL_ADR_] + str(i+1) + [=] + item + [');]);
+                 end;
+                 inc(i);
+             End;
+    i := 0 ; While (i<ListCount(_f_report.CoOwners.inns)) do
+                 item := ListGet(_f_report.CoOwners.inns, i);
+                 if ~isBlank(item) then
+                     Eval('', [ListAdd(L, 'INN_] + str(i+1) + [=] + item + [');]);
+                 end;
+                 inc(i);
+             End;
+    i := 0 ; While (i<ListCount(_f_report.CoOwners.self_ids)) do
+                 item := ListGet(_f_report.CoOwners.self_ids, i);
+                 if ~isBlank(item) then
+                     Eval('', [ListAdd(L, 'SELF_ID_] + str(i+1) + [=] + item + [');]);
+                 end;
+                 inc(i);
+             End;
+             
+    ListAdd(L, 'FULL_NAME=' + replace(_f_report.CoOwners.faces, #13+#10, '/'));
+    // --------------------------------------------------------------    
+    _f_report->Get_Ext_FACE(%D_OP_LINES._EXT_FACE);
+    ListAdd(L, 'CL_BANK_AREQ=' + _f_report.Get_Ext_FaceA.BANK_AREQ);
+    TableInsert(%T, L);
+    //end;
+    {
+    TableInsert(D_OP_LINES, List('DEPO_AMOUNT='+str(%D_OP_LINES._DEPO_AMOUNT), 'DEPO=' + str(%D_OP_LINES._DEPO), 
+                       'FOR_OPEN='  + str(%D_OP_LINES._FOR_OPEN), 
+                       'DEPO_NAME=' + str(%D_OP_LINES._DEPO_NAME),             'CL_FACE='    + str(_F_DEPO.GetClient.FACE), 
+                       'CL_F_DATE=' + str(_F_DEPO.GetClient.F_DATE),                'CL_SUBTYPE=' + str(_F_DEPO.GetClient.SUBTYPE),
+                       'SUBTYPE_NAME=' + str(_F_DEPO.GetClient.SUBTYPE_NAME),       'EXT_FACE='  + str(%D_OP_LINES._EXT_FACE),
+                       'DOC_ALL=' + _f_report.GetFace.doc_all,
+                       'FULL_NAME=' + _f_report.GetFace.FULL,                       'HOME_ADR=' + _f_report.GetFace.HOME_ADR,
+                       'MAIL_ADR=' + _f_report.GetFace.HOME_ADR,                    'BANK_AREQ=' + _f_report.Get_Ext_FaceA.BANK_AREQ ));                       
+    }
+    %D_OP_LINES.@NEXT;
+End;
+%D_OP_LINES.@FIRST;
+
+TableClear(%T3);
+%D_OP_LINES_3.@First;
+While (~%D_OP_LINES_3.@EOF) do
+    //AMOUNT_ float, EXT_FACE_ int, OWNERID int, FOR_INNER_DEPO_NUMBER str, DEPO_TYPE_NAME str
+    L := List();
+    ListAdd(L, 'OWNERID='+str(%D_OP_LINES_3._OWNERID));
+    ListAdd(L, 'OWNER_INN='+str(%D_OP_LINES_3._OWNER_INN));
+    ListAdd(L, 'OWNER_MAIL_ADR='+str(%D_OP_LINES_3._OWNER_MAIL_ADR));
+    ListAdd(L, 'FOR_INNER_DEPO_NUMBER=' + str(%D_OP_LINES_3._FOR_INNER_DEPO_NUMBER));
+    ListAdd(L, 'FOR_INNER_DEPO=' + + str(%D_OP_LINES_3._FOR_INNER_DEPO));
+    ListAdd(L, 'DEPO_TYPE_3_NAME=' + str(%D_OP_LINES_3._DEPO_TYPE_3_NAME));
+    ListAdd(L, 'AMOUNT_=' + str(D_OP_LINES_3._AMOUNT_));
+    // --------------------------------------------------------------    
+    _f_report->Get_Ext_Face( D_OP_LINES_3._EXT_FACE_); 
+    ListAdd(L, 'DOC_ALL=' + _f_report.Get_Ext_Face.doc_all);
+    ListAdd(L, 'NAME=' + _f_report.Get_Ext_Face.NAME);
+    ListAdd(L, 'HOME_ADR=' + _f_report.Get_Ext_Face.Home_Adr);
+    ListAdd(L, 'MAIL_ADR=' + _f_report.Get_Ext_Face.Mail_Adr);
+    ListAdd(L, 'BANK_AREQ=' + _f_report.Get_Ext_FaceA.BANK_AREQ);
+    
+    TableInsert(%T3, L);
+    ~%D_OP_LINES_3.@next;
+end;
+0

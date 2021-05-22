@@ -1,0 +1,48 @@
+//Out_security_balance_v03(%Tag:Str, %D:Date, %Share:Int, %COAF:Str, %security_evt_id:Str, %security_evt_lnk_L:List, %units:float, %numerator:Int, %denominator:Int, %ccy_code:Str, %amount:float, %blocked_L:List, %Way:Str, Info:Str)
+//Вывод блока security_balance_t_v03 в тэг %Tag
+//Эта функция может вывести только один блок <block_type>
+//%Share  - ID ценной бумаги
+//%COAF, %security_evt_id, %security_evt_lnk_L      - параметры по референсам
+//%units, %numerator, %denominator, %ccy_code, %amount - параметры по общему количеству ценных бумаг
+//%blocked_L  - список обременений и блокировок ценных бумаг в формате units;numerator;denominator;ccy_code;amount;block_type_code;narrative;restrictions;ACC;FACE;pledgee_narrative
+//SEG
+
+var InfoFrom, i, n, s, b_units,b_numerator,b_denominator,b_ccy_code,b_amount,block_type_code,narrative,restrictions,ACC,FACE,pledgee_narrative;
+
+Info:='';
+%Way:=_F_NXML2->Add_Way(%Way, %Tag);
+
+Out('<'+%Tag+'>');
+ 
+  if IsBlank(%Share) then
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не указана ценная бумага'));
+  else
+    _F_NXML2->Out_security_info_V3('security', %Share, %COAF, %security_evt_id, %security_evt_lnk_L, %Way, InfoFrom);
+    Info:=_F_XML->Add_Info(Info, InfoFrom);
+  end;  
+  
+  _F_NXML2->Out_quantity_choice('total', %units, %numerator, %denominator, %ccy_code, %amount, %Way, InfoFrom);
+  Info:=_F_XML->Add_Info(Info, InfoFrom);
+  
+  n:=ListCount(%blocked_L); i:=0;
+  if n<>0 then
+     %Way:=_F_NXML2->Add_Way(%Way, 'blocked');  //обременения и блокировки ценных бумаг
+     while i<=(n-1) do
+        s:=ListGet(%blocked_L, i);
+        Assign(s,';',b_units,b_numerator,b_denominator,b_ccy_code,b_amount,block_type_code,narrative,restrictions,ACC,FACE,pledgee_narrative);
+        Out('<blocked>');
+        
+           _F_NXML2->Out_quantity_choice('quantity', b_units, b_numerator, b_denominator, b_ccy_code, b_amount, %Way, InfoFrom);  //Количество ценных бумаг
+           Info:=_F_XML->Add_Info(Info, InfoFrom);
+           
+           _F_NXML2->Out_block_type_V03('block_type', block_type_code, narrative, restrictions, ACC, FACE, pledgee_narrative, %D, %Way, InfoFrom);  //вид обременения
+           Info:=_F_XML->Add_Info(Info, InfoFrom);
+        
+        Out('</blocked>');
+        Inc(i);
+     end;
+  end;
+ 
+Out('</'+%Tag+'>');
+
+0;

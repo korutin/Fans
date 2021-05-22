@@ -1,0 +1,79 @@
+// Make_I_DISCLOSURE_REQ_json(%descr: List; %D_DATE: datetime; %STATE:str;%KVIT:int):int
+// --------------------------------------------------------------------------
+// EKS 12.2020
+
+var DOL_ID2, t, DOC_ID, DOL_ID, L, LL, L2, L3, LM, item, i, k1, k2, k3, j_subordinate, j_shareholders, j_balance, j_basis;
+t      := _METAL_F->JSON_Open( %descr );
+DOC_ID := _F_BUX_OP->CREATE_OPS( 'I_DISCLOSURE_REQ', %D_DATE, %STATE, %KVIT, 0 );
+// Тут бы пришлась кстати функция маппинга: даешь ей на вход список и функцию , которая вызывается для каждого элемента списка.
+LL := L := L2 := L3 := List();
+
+L := TableRecordVal(t);
+i := 0;
+While (i<ListCount(L)) do
+    item := ListGet(L, i);
+    if copy(item, 1,1)<>'_' then
+        ListAdd(L2, item);
+    else
+        // Разбираем подвалы        
+        if (UpperCase(Token(item,'=',1))='_SHAREHOLDERS') then
+            j_shareholders := t.__SHAREHOLDERS;
+            j_shareholders.@First;
+            k1 := 1;
+            While ~j_shareholders.@EOF do
+                LL     := TableRecordVal(j_shareholders);
+                DOL_ID := _F_BUX_OP->CREATE_OP_LINE_FULL( DOC_ID, k1, 1);
+                _F_BUX_OP->CREATE_OP_VALS_LINE( DOC_ID, DOL_ID, LL {L3} );
+                j_shareholders.@Next;
+                inc(k1);
+            end
+        elsif (UpperCase(Token(item,'=',1))='_BALANCE') then
+            j_balance := t.__BALANCE;
+            j_balance.@First;
+            k1 := 1;
+            While ~j_balance.@EOF do
+                LL     := TableRecordVal(j_balance);
+                DOL_ID := _F_BUX_OP->CREATE_OP_LINE_FULL( DOC_ID, k1, 2);
+                _F_BUX_OP->CREATE_OP_VALS_LINE( DOC_ID, DOL_ID, LL {L3} );
+                j_balance.@Next;
+                inc(k1);
+            End;            
+        elsif (UpperCase(Token(item,'=',1))='_BASIS') then
+            j_basis := t.__BASIS;
+            j_basis.@First;
+            k1 := 1;
+            While ~j_basis.@EOF do
+                LL     := TableRecordVal(j_basis);
+                k2 := 0;
+                LM := List();
+                While k2<ListCount(LL) do
+                    item := ListGet(LL, k2); 
+                    if (UpperCase(Token(item,'=',1))='__SUBORDINATE') then
+                        j_subordinate := j_basis.___SUBORDINATE;
+                        k3 := 1;
+                        j_subordinate.@First;                                                
+                        While ~j_subordinate.@EOF do
+                            L3 := List();
+                            ListAdd(L3, 'GROUND_CODE_4='+j_basis._GROUND_CODE);
+                            ListAdd(L3, 'SUBORDINATE='+j_subordinate.___SUBORDINATE);
+                            DOL_ID2 := _F_BUX_OP->CREATE_OP_LINE_FULL( DOC_ID, k3, 4);
+                            _F_BUX_OP->CREATE_OP_VALS_LINE( DOC_ID, DOL_ID2, L3 );
+                            inc(k3);
+                            j_subordinate.@Next;
+                        End;
+                    else
+                        ListAdd(LM, item);                        
+                    end;
+                    inc(k2);
+                End;
+                DOL_ID := _F_BUX_OP->CREATE_OP_LINE_FULL( DOC_ID, k1, 3);
+                _F_BUX_OP->CREATE_OP_VALS_LINE( DOC_ID, DOL_ID, LM );
+                inc(k1);
+                j_basis.@Next;
+            End;            
+        end;
+    end;
+    inc(i);
+End;
+_F_BUX_OP->CREATE_OP_VALS( DOC_ID, L2);
+DOC_ID;

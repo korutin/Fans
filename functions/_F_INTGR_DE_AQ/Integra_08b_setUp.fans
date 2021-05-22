@@ -1,0 +1,57 @@
+// Integra_08b_setUp( %CrMoment:datetime; %Objects:int); 
+// -----------------------------------------------------
+// EKS 03.2021
+
+var x_share, c, ID, SE;
+var ISSUER, UPPER_ID, SD_ID, UK_ID, SHARE, EMI_UK, EMI_ETF, NRD_ID; 
+var __tFace_UPPER, __tFace_SD, __tFace_ETF, __tShare_ETF, __tClient_EmiAcc, __tClient_GivePaiAcc, __tFace_FBrok, __tFace_NRD, __tFace_UK;
+var Rest_Give;
+var REGCreateMoment, SDCreateMoment, issueMoment, UKAccOpenMoment, OwnCreateMoment, UKCreateMoment;
+
+REGCreateMoment := date(%CrMoment);
+SDCreateMoment  := date(%CrMoment);
+issueMoment     := date(%CrMoment);
+UKCreateMoment  := date(%CrMoment);
+UKAccOpenMoment := date(%CrMoment);
+
+__tFace_UPPER   := _TYPES->tFace;         OwnerSet(__tFace_UPPER,        self.Caller.self); 
+__tFace_UK      := _TYPES->tFace;         OwnerSet(__tFace_UK,           self.Caller.self); 
+__tFace_SD      := _TYPES->tFace;         OwnerSet(__tFace_SD,           self.Caller.self); 
+__tShare_ETF    := _TYPES->tShare;        OwnerSet(__tShare_ETF,         self.Caller.self);
+
+try
+   NRD_ID := Extract('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+   if IsBlank(NRD_ID) then
+      try
+          NRD_ID := _QA->InsFaceByAlias_t('JurRusCentrDepA', Date(REGCreateMoment)-365, __tFace_NRD);
+      except
+          raise('Не удалось найти в справочнике кодировщика НДЦ. Вставить НДЦ также не получилось. Идентификация субъектов с точки зрения НРД будет не возможна');
+      end;
+   end; 
+except
+   raise("Найдено несколько субъектов по мнемонике 'НДЦ'");
+end;
+
+// -----------------------------------------------------------------------------
+// Создать Регистратор от которого будем принимать запрос
+UPPER_ID := _QA->InsFaceByAlias_t('JurRusRegistrator', Date(REGCreateMoment), __tFace_UPPER);     
+// -----------------------------------------------------------------------------
+// Создать управляющую компанию
+UK_ID := _QA->InsFaceByAlias_t('JurRusUK_RegPortInv', Date(UKCreateMoment), __tFace_UK);     
+// -----------------------------------------------------------------------------
+// Создать дежурный спецдеп.
+SD_ID := _QA->InsFaceByAlias_t('JurRusSpecDepInfinitum', Date(SDCreateMoment), __tFace_SD);  
+// -----------------------------------------------------------------------------
+SHARE   := _QA->InsETFByAlias_t( 'RusCloseProp_ETF02', issueMoment,  __tFace_ETF, __tShare_ETF, null, null, UK_ID, SD_ID);
+x_share := __tShare_ETF.___tShares;    
+ISSUER  := x_share._ISSUER;
+
+
+GS_SET(%Objects,'__tFace_ISS'          ,__tFace_ETF         );    
+// GS_SET(%Objects,'__tFace_FBrok'        ,__tFace_FBrok       );
+// GS_SET(%Objects,  'ISSUER'             ,ISSUER );
+GS_SET(%Objects,  'UPPER_ID'           ,UPPER_ID  );
+GS_SET(%Objects,  'SD_ID'              ,SD_ID  );
+GS_SET(%Objects,  'NRD_ID'             ,NRD_ID  );
+GS_SET(%Objects,  'SHARE'              ,SHARE  );
+// GS_SET(%Objects,  'EMI_UK'             ,EMI_UK  );

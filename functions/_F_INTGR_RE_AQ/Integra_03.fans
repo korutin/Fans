@@ -1,0 +1,129 @@
+// Integra_03
+// --------------------------------------------------------------------------------------
+// Интеграционный тест для проверки механизма обработки анкеты на изменение реквизитов зарегистрированного лица в приложении REESTR
+// Центральным объектом проверки являются категории докуметов "Анкета юридического лица" (D_A_UANKETA) и "Изменение реквизитов зарегистрированного/уполномоченного лица"  (OP_R_ADM_CHANGE)
+// Возвращаемое значение 0 - passed (тест прошел)
+//                       1 - не прошел
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed; 1 - error
+//                                      log      : список строк с ошибками
+// EKS 10.2020
+
+uses _F_BUX_OP, _F_NXML, _QA;
+
+// $meta begin
+var __tFace_CentralD   := Table( B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, 
+                                 __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str), 
+                                 __tCode_CODES Table(CODER int, CODE str, FACE int), 
+                                 __tOMETA Table(ID int, CLASS str)),
+    __tFace_ETF        := Table( B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str, EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int, DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str, PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int, CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str, OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str, 
+                                 __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str), 
+                                 __tCode_CODES Table(CODER int, CODE str, FACE int), 
+                                 __tOMETA Table(ID int, CLASS str)),
+    __tClient_CentralD := Table( BAL_ACC int, ID int, NUMBER str, TYPE_ int, SUBTYPE int, FACE int, RELATION int, PARENT int, PLAN_ID int, IS_TERM str, IS_MANAGER int, IS_VOICE int, IS_PRIV int, IS_SOV int, IS_NZ int, IS_BCLIENT int, STATE int, D_OPEN date, D_CLOSE date, Z_DATE date, F_DATE date, OPER int, NAME str, LINK_NUMBER str, INCOME_MOD int, INCOME_ACC int, INCOME_ADR str, INCOME_REC str, INCOME_FACE int, O_MAIL_MOD int, O_MAIL_ADR str, I_MAIL_MOD int, I_MAIL_ADR str, DD_DATE date, DD_NUM str, PLACE int, ISSUER int, TARIF str, TRANSIT int, EXTRA_INT int, EXTRA_TYPE int, CLI_ORG int, USER_CODE str, __tAFFILS Table(RELATION int, FACE int, B_DATE date, A_END date, PERCENT_ int, INCOME_ACC int, INCOME_FACE int, INCOME_REC str), __tOMETA Table(ID int, CLASS str)),
+      tClaim_cc        := Table( NUM str, D_DATE datetime, FOND int, AGENT int, POINT int, TRUSTER int, Z_TYPE int, DEPO_LS str, DOC int, K_DEPO str, K_OSN str, K_NAME str, SUMMA float, __tOMETA Table(ID int, CLASS str));
+// $meta end
+
+var fName, sm, etalon_in, etalon_out, err_c, dt, f_date, k, z, qnt, AnketaXML, c,
+    docDateOtvet, docDateZapros, Zapros_ID;
+var logK, pth;
+var QA_CODE    := 'Integra_03', F_ID, SELF_ID, ISSUER, CLIENT_ID, NRD_ID, D_ID, PIF_ID, MASS_NUM, MASS_DATE, SHARE, DOL_ID, GIVECLI_ID, DPL, SF, RATE, R_DATE, DIR, MESS_ID;
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+
+var BangMoment          := datetime('01.09.2020 09:00:00'),
+    NominiAccOpenMoment := datetime('01.09.2020 12:10:00'),
+    ChangeMoment        := datetime('03.09.2020 10:00:00'),
+    docNumZapros        := '01-01-toNRD',
+    docNumOtvet         := '01-01-fromNRD',
+    Path                := 'C:\Users\User-Piter\Documents\Заявки\Заявко 14172\анкета Аквамарин.xml',
+    header_doc_num      := CreateGUID,
+    header_doc_date     := date( ChangeMoment ),
+    account_id          := '',
+    new_account_type    := 2;
+var CLAIM_ID, ANKETA_ID;
+
+SHARE      := 10072;     //26545;
+ISSUER     := clear(0);  // 4929886;
+NRD_ID     := clear(0);  // 4929885
+
+try
+    SelectSQL('Данные', [ SELECT self_id FROM od_faces WHERE mnem = :m and LAST_FLAG = 1 ], 'НДЦ', NRD_ID, exit);
+    if isBlank(NRD_ID) then
+        NRD_ID := _QA->InsFaceByAlias_t('NDC-A', BangMoment, __tFace_CentralD);
+    //else
+    //    Если попали сюда, значит в базе уже есть лицо с мнемоникой НДЦ, загружаем его из базы в Профиль
+    //    _QA->LoadProfileFace_t( NRD_ID,  __tFace_CentralD );
+    end;
+    
+    SelectSQL('Данные', [ SELECT f.self_id 
+                          FROM od_faces f
+                              LEFT JOIN od_face_coders fc on fc.FACE = f.ID
+                          WHERE f.LAST_FLAG = 1 and UPPER(TRIM(fc.CODE)) = :C ], Trim(UpperCase('JurRusETFIssuerC')), ISSUER, exit);
+    if isBlank(ISSUER) then
+        ISSUER    := _QA->InsFaceByAlias_t('JurRusETFIssuerC', BangMoment, __tFace_ETF );
+    //else
+    //    _QA->LoadProfileFace_t( ISSUER,  __tFace_ETF ); 
+    end;
+    CLIENT_ID  := _QA->InsClientByAlias_t('CD-01', NominiAccOpenMoment, NRD_ID, ISSUER, null, __tClient_CentralD );
+    account_id := __tClient_CentralD._NUMBER;
+    _F_NXML->CreateTest_ACCOUNT_MODIFICATION_INSTRUCTION( header_doc_num, header_doc_date, SHARE, account_id, new_account_type,
+                                                          AnketaXML );                                                          
+
+    // fName := CreateGUID;
+    // DIR   := OptionsDlg.Export_Dir.Text+iif(copy(OptionsDlg.Export_Dir.Text, length(OptionsDlg.Export_Dir.Text), 1)='\','','\') + fName;
+    // FIO->DirCreate( DIR );
+    // pth   := FIO->MakeFileName( DIR , fName, 'xml');
+    // CopyFile( Path, pth );    
+except
+    ListAdd(LOGK, 'QA-System: Перед тестом '+QA_CODE + ' не удалось создать окружение')
+end;
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария
+try
+    MESS_ID := _QA->gc( AnketaXML );
+    // Обработаем Входящее сообщение НРД MESS_ID, в котором по задуманному должна содержаться Анкета
+    z := _F_DOC->Exec_Doc_Dir_BySysName( MESS_ID, clear(0), 'UNIVERSUM', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Входящее сообщение НРД. Код ошибки:' + str(z));end;
+    c:=0;
+    SelectSQL('Данные', [ select d.ID
+                          from PR_DOC_LINKS( :DOC ) p
+                                left join OD_DOCS d on d.ID = p.L_DOC
+                                left join OD_DOC_CATS dc on dc.id = d.D_CAT
+                          where p.L_CODE = 2006 and dc.sys_name = 'D_A_UANKETA'
+                          ], MESS_ID, ANKETA_ID, inc(c));
+    if (c>1) then
+        raise('У экземпляра Входящее сообщение НРД, Более 2-х связанных с ним Анкет юридического лица');
+    elsif (c=0) then
+        raise('У экземпляра Входящее сообщение НРД, нет ни одной порожденной Анкеты юридического лица');
+    end;    
+    c:=0;
+    SelectSQL('Данные', [ select d.ID
+                          from PR_DOC_LINKS( :DOC ) p
+                                left join OD_DOCS d on d.ID = p.L_DOC
+                                left join OD_DOC_CATS dc on dc.id = d.D_CAT
+                          where p.L_CODE = 2006 and dc.sys_name = 'D_A_CHANGE_FACE'
+                          ], MESS_ID, CLAIM_ID, inc(c));
+    if (c>1) then
+        raise('У экземпляра Входящее сообщение НРД, Более 2-х связанных с ним Заявлений на изменение реквизитов лицевого счета');
+    elsif (c=0) then
+        raise('У экземпляра Входящее сообщение НРД, нет ни одного связанного Заявления на изменение реквизитов лицевого счета');
+    end;    
+    
+    // Выполним директиву "Подтверждение" у Анкеты
+    z := _F_DOC->Exec_Doc_Dir_BySysName( ANKETA_ID, clear(0), 'R_TEST->R_RECIEVED', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Анкету. Код ошибки:' + str(z));end;
+    
+    z := _F_DOC->Exec_Doc_Dir_BySysName( CLAIM_ID, clear(0), 'GEN_OPER_CHANGE_R', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось сгенерировать административную операцию для Изменения реквизитов из Заявления (DOC='+str(CLAIM_ID)+'). Код ошибки:' + str(z));end;
+except
+    ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением. Детали {' + Exception.text + '}')
+end;
+
+Message('ID Входящее сообщение НРД = ' + str(MESS_ID)+#13+#10+
+'ID Анкеты = ' + str(ANKETA_ID)+#13+#10+
+'ID Заявления = ' + str(CLAIM_ID));

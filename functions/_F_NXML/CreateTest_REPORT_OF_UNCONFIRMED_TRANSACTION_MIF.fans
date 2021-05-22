@@ -1,0 +1,260 @@
+//CreateTest_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF(%header_doc_num, %header_doc_date, %CLIENT, %SHARE, %CLM_REESTR:int; content)
+// ----------------------------------------------
+// Функция создаёт экземпляр xml поручние типа REPORT_OF_UNCONFIRMED_TRANSACTION_MIF из форматов FCDR_13_01
+// Экземпляр создается из параметризованного шаблона.
+// Параметризуются тэги:
+// doc_num
+// doc_date\date
+// account_dtls\account_id\id
+// account_dtls\account_type
+// account_dtls\account_name
+// account_holder\party_id\id
+// account_holder\party_name
+
+// EKS 09.2020
+var tab := '  ',
+    account_id, 
+    account_holder_stype, account_holder_ogrn, account_holder_inn, account_holder_ogrndate,
+    account_type, account_name, account_hodlder_id, account_hodlder_name, security_code, security_form, security_proprietary_code, ISIN_identifier,
+    clm_cnt, ptr,
+    security_numreg, security_datereg, security_type, maxSHID;
+
+function 'out_ogrn(%account_holder_ogrn, %tap:str):str' do
+var re;
+if isBlank(%account_holder_ogrn) then
+    re := ''
+else
+    re :=
+    %tap + [<party_id>]+#13+#10+
+    %tap + [  <id>] + str(%account_holder_ogrn) + [</id>]+#13+#10+
+    %tap + [  <scheme_name>OGRN</scheme_name>]+#13+#10+
+    %tap + [</party_id>]+#13+#10;
+end;
+re;    
+end;
+
+function 'out_inn(%account_holder_inn, %tap:str):str' do
+var re;
+if isBlank(%account_holder_inn) then
+    re := ''
+else
+    re :=
+    %tap + [<party_id>]+#13+#10+
+    %tap + [  <id>] + str(%account_holder_inn) + [</id>]+#13+#10+
+    %tap + [  <scheme_name>TXID</scheme_name>]+#13+#10+
+    %tap + [</party_id>]+#13+#10;
+end;
+re;    
+end;
+    
+function 'Out_autorised_person(%face:int;%tap:str):str' do
+var re;
+    if ~isNull(%face) then
+        re:=
+            %tap + [<autorised_person>]+#13+#10+
+            %tap + [  <authorised_person_type>08</authorised_person_type>]+#13+#10+
+            %tap + [  <authorised_person_position>dsaf</authorised_person_position>]+#13+#10+
+            %tap + [  <authorised_person_dtls>]+#13+#10+
+            %tap + [  <party_id>]+#13+#10+
+            %tap + [    <id>7714324003</id>]+#13+#10+
+            %tap + [    <scheme_name>TXID</scheme_name>]+#13+#10+
+            %tap + [  </party_id>]+#13+#10+
+            %tap + [  <indivdiual_or_entity>LEGL</indivdiual_or_entity>]+#13+#10+
+            %tap + [  </authorised_person_dtls>]+#13+#10+
+            %tap + [  <bases_of_powers>putin</bases_of_powers>]+#13+#10+
+            %tap + [</autorised_person>]+#13+#10;
+    else
+        re := '';
+    end;    
+    re;
+end;
+
+function 'Out_transactions_info_mif(%recQuantity:int;%trType:str;%codeBaseTr:str;%docNum:str;%docDate:Date;%qnt,%openBalance,%closeBalance:float;%outDocNum,%inDocNum:str;%outDocDate:date;%prcDateTime:datetime;%prcRef:str;%owner:str;%tap:str):str' do
+var re;
+    re:=
+    %tap + [<transactions_info_mif>]+#13+#10+
+    %tap + [    <current_instruction_number>] + str(%recQuantity) + [</current_instruction_number>]+#13+#10+
+    %tap + [    <transaction_type>] + %trType + [</transaction_type>]+#13+#10+
+    %tap + [        <code_base_transactions>] + %codeBaseTr + [</code_base_transactions>]+#13+#10+
+    %tap + [    <doc_link_request>]+#13+#10+
+    %tap + [        <doc_num>] + %docNum + [</doc_num>]+#13+#10+
+    %tap + [        <doc_date><date>] + _F_XML->Set_Date(%docDate) + [</date></doc_date>]+#13+#10+
+    %tap + [    </doc_link_request>]+#13+#10+
+    %tap + [    <quantity>]+#13+#10+
+    %tap + [            <units>]+str(%qnt)+[</units>]+#13+#10+
+    %tap + [    </quantity>]+#13+#10+
+    %tap + [    <block_indicator>No</block_indicator>]+#13+#10+
+    %tap + [    <opening_balance>]+#13+#10+
+    %tap + [        <units>] + str(%openBalance) + [</units>]+#13+#10+
+    %tap + [    </opening_balance>]+#13+#10+
+    %tap + [    <closing_balance>]+#13+#10+
+    %tap + [        <units>]+ str(%closeBalance) +[</units>]+#13+#10+
+    %tap + [    </closing_balance>]+#13+#10+
+    %tap + [    <processing_info>]+#13+#10+
+    %tap + [        <link>]+#13+#10+
+    %tap + [            <out_doc_num>] + %outDocNum + [</out_doc_num>]+#13+#10+
+    %tap + [            <in_doc_num>] + %inDocNum + [</in_doc_num>]+#13+#10+
+    %tap + [            <out_doc_date><date>]+_F_XML->Set_Date(%outDocDate)+[</date></out_doc_date>]+#13+#10+
+    %tap + [        </link>]+#13+#10+
+    %tap + [        <processing_datetime><datetime>] + _F_XML->Set_DateTime(%prcDateTime) + [</datetime></processing_datetime>]+#13+#10+
+    %tap + [        <processing_reference>]+%prcRef+[</processing_reference>]+#13+#10+
+    %tap + [    </processing_info>]+#13+#10+
+    %tap + [    <owner>]+%owner+[</owner>]+#13+#10+
+    %tap + [</transactions_info_mif>];
+end;
+
+content := List();
+if isNull(%CLM_REESTR) then
+    raise('Реестр с заявками пуст, сформировать запрос невозможно');
+end;
+
+// Количество заявок в передаваемом в функцию реестре 
+clm_cnt := %CLM_REESTR.@recordcount;
+account_holder_ogrn := clear('');
+
+
+// Набрать аттрибутов счета депо пассивного (depositor_transmit_inf)
+_F_DEPO->GetClient(%CLIENT);
+account_id   := _F_DEPO.GetClient.NUMBER;
+account_type := _F_DEPO.GetClient.SUBTYPE;
+account_name := _F_DEPO.GetClient.name;
+
+_F_REPORT->GetFace(_F_DEPO.GetClient.FACE, date(%header_doc_date));
+account_hodlder_id   := _F_DEPO.GetClient.FACE;
+account_hodlder_name := _F_REPORT.GetFace.name;
+account_holder_stype := _F_REPORT.GetFace.s_type;
+if (account_holder_stype = 1) then
+    _F_REPORT->GetUFace(account_hodlder_id, date(%header_doc_date));
+    account_holder_ogrn     := _F_REPORT.GetUFace.OGRN;
+    account_holder_ogrndate := _F_REPORT.GetUFace.OGRN_DATE;
+    account_holder_inn      := _F_REPORT.GetFace.INN;
+end;
+
+_F_REPORT->GetShare(%SHARE);
+security_numreg           := _F_REPORT.GetShare.NUM_REG;
+security_datereg          := _F_REPORT.GetShare.DATE_REG;
+ISIN_identifier           := _F_REPORT.GetShare.ISIN;
+
+
+security_code             := str(%SHARE);
+security_proprietary_code := str(%SHARE);
+security_numreg           := _F_REPORT.GetShare.NUM_REG;
+ISIN_identifier           := _F_REPORT.GetShare.ISIN;
+
+// security_form := 'ELEC';
+// if _F_REPORT.GetShare.CLASS_ID = 2 then
+//     security_type := 'BOND'
+// elsif (_F_REPORT.GetShare.CLASS_ID = 10) then
+//     security_type := 'MFUN'
+// elsif (_F_REPORT.GetShare.CLASS_ID = 1) then
+//     if (_F_REPORT.GetShare.ShareType='привилегированная') then
+//         security_type := 'SHARE'
+//     elsif (_F_REPORT.GetShare.ShareType='обыкновенная') then
+//         security_type := 'PREF'
+//     else
+//         security_type := 'SHAR'
+//     end;
+// end;
+
+
+// Шаблон из файла '2019_07_04 - 45_175555_Поручение на перевод ценных бумаг Депонента на торговый счет депо_ с торгового счета депо_(R03-5)_[R03-5_NTN2].xml'
+content := [<?xml version="1.0" encoding="windows-1251"?>
+<REPORT_OF_UNCONFIRMED_TRANSACTION_MIF>
+    <version>FCDR_13_01</version>
+    <header>
+        <doc_num>] + %header_doc_num + [</doc_num>
+        <doc_date>
+            <date>] + _F_XML->Set_Date(%header_doc_date) + [</date>
+        </doc_date>
+        <link>
+            <out_doc_num>NONREF</out_doc_num>
+            <in_doc_num>NONREF</in_doc_num>
+        </link>
+    </header>
+    <previous_ref>
+        <ref_doc_num>NONREF</ref_doc_num>
+        <ref_doc_date><date>1900-01-01</date></ref_doc_date>
+    </previous_ref>
+    <account_dtls_v02>
+        <account_id>
+            <id>]+str(account_id)+[</id>
+            <issuer>NSDR</issuer>
+        </account_id>
+        <account_type>
+            <account_type_code>12</account_type_code>
+        </account_type>
+    </account_dtls_v02>
+    <account_holder_v02>
+        <id_2>
+            <id>] + str(account_holder_ogrn) + [</id>
+            <id_type>OGRN</id_type>
+        </id_2>
+        <id_date>] + _F_XML->Set_Date(account_holder_ogrndate) + [</id_date>
+    </account_holder_v02>
+    <security>
+        <security_classification>MFUN</security_classification>
+        <state_reg_num>] + str(security_numreg) + [</state_reg_num>] + #13 + #10 +
+        iif(isBlank(security_datereg), '',[        <state_reg_date>] + _F_XML->Set_Date(security_datereg) + [</state_reg_date>] + #13 + #10 ) +
+        iif(isBlank(ISIN_identifier), '', [        <ISIN_identifier>] + str(ISIN_identifier) + [</ISIN_identifier>] + #13 + #10 ) + [
+        <proprietary_security_code>
+            <id>RU000A100FL0</id>
+            <issuer>NSDR</issuer>
+        </proprietary_security_code>
+    </security>
+    <total_linked_instructions>]+str(clm_cnt)+[</total_linked_instructions>] + #13 + #10;
+    %CLM_REESTR.@FIRST;
+    ptr := 1;
+    //CLM_REESTR = Table(trType str, codeBaseTr str, docNum str, docDate Date, qnt float, openBalance float, closeBalance float, outDocNum str, inDocNum str, outDocDate Date,
+    //                   prcDateTime Ddatetime, prcRef str, owner str);
+    While ~%CLM_REESTR.@EOF do
+        content := content + 
+                    Out_transactions_info_mif( ptr,                      //%recQuantity:int;
+                                               'RECE',                   //%trType:str;
+                                               'TR14',                   //%codeBaseTr:str;
+                                               %CLM_REESTR._docNum,      //%docNum:str;
+                                               %CLM_REESTR._docDate,     //%docDate:Date;
+                                               %CLM_REESTR._qnt,         //%qnt,
+                                               %CLM_REESTR._openBalance, //%openBalance,
+                                               %CLM_REESTR._closeBalance,//%closeBalance:float;
+                                               %CLM_REESTR._outDocNum,   //%outDocNum,
+                                               %CLM_REESTR._inDocNum,    //%inDocNum:str;
+                                               %CLM_REESTR._outDocDate,  //%outDocDate:date;
+                                               %CLM_REESTR._prcDateTime, //%prcDateTime:datetime;
+                                               %CLM_REESTR._prcRef,      //%prcRef:str;
+                                               %CLM_REESTR._owner,       //%owner:str;
+                                               '    ');                  //%tap
+        ~%CLM_REESTR.@NEXT;
+        inc(ptr);
+    End;
+    content := content + [</REPORT_OF_UNCONFIRMED_TRANSACTION_MIF>];
+//     <transactions_info_mif>
+//         <current_instruction_number>1</current_instruction_number>
+//         <transaction_type>RECE</transaction_type>
+//         <code_base_transactions>TR14</code_base_transactions>
+//         <doc_link_request>
+//             <doc_num>10.0036-19/СМRAM</doc_num>
+//             <doc_date><date>2019-08-21</date></doc_date>
+//         </doc_link_request>
+//         <quantity>
+//             <units>1.83333</units>
+//         </quantity>
+//         <block_indicator>No</block_indicator>
+//         <opening_balance>
+//             <units>14.71</units>
+//         </opening_balance>
+//         <closing_balance>
+//             <units>16.54333</units>
+//         </closing_balance>
+//         <processing_info>
+//             <link>
+//                 <out_doc_num>10.0036-19/СМRAM</out_doc_num>
+//                 <in_doc_num>NONREF</in_doc_num>
+//                 <out_doc_date><date>2019-08-21</date></out_doc_date>
+//             </link>
+//             <processing_datetime><datetime>2019-08-26T14:28:06</datetime></processing_datetime>
+//             <processing_reference>190826/00007</processing_reference>
+//         </processing_info>
+//         <owner>ML960705119A</owner>
+//     </transactions_info_mif>
+// </REPORT_OF_UNCONFIRMED_TRANSACTION_MIF>
+// ];

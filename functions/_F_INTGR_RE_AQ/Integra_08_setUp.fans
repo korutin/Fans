@@ -1,0 +1,78 @@
+// Integra_08_setUp( %CrMoment:datetime; %Objects:int); 
+// -----------------------------------------------------
+// EKS 02.2021
+
+var x_share, c, ID, SE;
+var ISSUER, UK_ID, SD_ID, SHARE, EMI_UK, EMI_ETF, NRD_ID; 
+var __tFace_UK, __tFace_SD, __tFace_ETF, __tShare_ETF, __tClient_EmiAcc, __tClient_GivePaiAcc, __tFace_FBrok, __tFace_NRD;
+var Rest_Give;
+var UKCreateMoment, SDCreateMoment, issueMoment, UKAccOpenMoment, OwnCreateMoment;
+
+UKCreateMoment  := date(%CrMoment);
+SDCreateMoment  := date(%CrMoment);
+issueMoment     := date(%CrMoment);
+UKAccOpenMoment := date(%CrMoment);
+Rest_Give       := 100.0;
+
+__tFace_UK    := _TYPES->tFace;         OwnerSet(__tFace_UK,           self.Caller.self); 
+__tFace_SD    := _TYPES->tFace;         OwnerSet(__tFace_SD,           self.Caller.self);
+__tFace_ETF   := _TYPES->tFace;         OwnerSet(__tFace_ETF,          self.Caller.self);
+__tFace_FBrok := _TYPES->tFace;         OwnerSet(__tFace_FBrok,        self.Caller.self);
+__tFace_NRD   := _TYPES->tFace;         OwnerSet(__tFace_NRD,          self.Caller.self);
+__tShare_ETF  := _TYPES->tShare;        OwnerSet(__tShare_ETF,         self.Caller.self);
+__tClient_GivePaiAcc := _TYPES->tClient;OwnerSet(__tClient_GivePaiAcc, self.Caller.self);
+__tClient_EmiAcc     := _TYPES->tClient;OwnerSet(__tClient_EmiAcc,     self.Caller.self);
+
+try
+   NRD_ID := Extract('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+   if IsBlank(NRD_ID) then
+      try
+          NRD_ID := _QA->InsFaceByAlias_t('JurRusCentrDepA', Date(UKCreateMoment)-365, __tFace_NRD);
+      except
+          raise('Не удалось найти в справочнике кодировщика НДЦ. Вставить НДЦ также не получилось. Идентификация субъектов с точки зрения НРД будет не возможна');
+      end;
+   end; 
+except
+   raise("Найдено несколько субъектов по мнемонике 'НДЦ'");
+end;
+
+// -----------------------------------------------------------------------------
+// Создать управляющую компанию
+UK_ID := _QA->InsFaceByAlias_t('JurRusUK_RegPortInv', Date(UKCreateMoment), __tFace_UK);     
+// -----------------------------------------------------------------------------
+// Создать дежурный спецдеп.
+SD_ID := _QA->InsFaceByAlias_t('JurRusSpecDepInfinitum', Date(SDCreateMoment), __tFace_SD);  
+// -----------------------------------------------------------------------------
+SHARE   := _QA->InsETFByAlias_t( 'RusCloseProp_ETF02', issueMoment,  __tFace_ETF, __tShare_ETF, null, null, UK_ID, SD_ID);
+x_share := __tShare_ETF.___tShares;    
+ISSUER  := x_share._ISSUER;
+
+// -----------------------------------------------------------------------------
+// Открыть счет управляющей компании "выдаваемые инвестиционные паи"
+EMI_UK := _QA->InsClientByAlias_t( 'VP-01', Date(UKAccOpenMoment), UK_ID, ISSUER, null, __tClient_GivePaiAcc);
+
+// -----------------------------------------------------------------------------
+// Открыть лицевой счет фонда (эмиссионный)
+// Придется намешать немного логики на случай если в базе уже открыт лицевой счет фонда у фонда ISSUER
+c := 0;
+SelectSQL('Данные', [select ID from OD_CLIENTS where SUBTYPE = 7 and ISSUER = :ISS], ISSUER, ID, inc(c);EMI_ETF:=ID;exit);
+// Если в базе еще нет лицевого счета фонда (что в общем то хочется ожидать), то импортируем его из библитэки артефактов, если же есть, то берем то что есть.
+if (c<1) then
+    EMI_ETF   := _QA->InsClientByAlias_t('EM-01', Date(UKCreateMoment), UK_ID, ISSUER, null{AFFILS}, __tClient_EmiAcc);
+end;
+
+// -----------------------------------------------------------------------------
+// Выдать паи с лицевого счета фонда на лицевой счет управляющей компании 
+SE := _QA->IssueEtf_ext(DateTime(issueMoment), EMI_ETF, EMI_UK, SHARE, Rest_Give, '');
+
+GS_SET(%Objects,'__tFace_ISS'          ,__tFace_ETF         );    
+GS_SET(%Objects,'__tFace_FBrok'        ,__tFace_FBrok       );
+//GS_SET(%Objects,'__tFace_SnBrok'  ,__tFace_SnBrok  );     
+GS_SET(%Objects,'__tShare_ETF'         ,__tShare_ETF        );
+GS_SET(%Objects,'__tClient_GivePaiAcc' ,__tClient_GivePaiAcc);
+GS_SET(%Objects,'__tClient_EmiAcc'     ,__tClient_EmiAcc    );
+GS_SET(%Objects,  'ISSUER'             ,ISSUER );
+GS_SET(%Objects,  'UK_ID'              ,UK_ID  );
+GS_SET(%Objects,  'SD_ID'              ,SD_ID  );
+GS_SET(%Objects,  'NRD_ID'             ,NRD_ID  );
+GS_SET(%Objects,  'SHARE'              ,SHARE  );

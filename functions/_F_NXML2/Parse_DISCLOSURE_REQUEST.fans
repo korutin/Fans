@@ -1,0 +1,698 @@
+// Parse_DISCLOSURE_REQUEST(%doc_id, %mute, ErrList)
+// ---------------------
+// EKS 10.2020
+uses _f_ixml, _F_IXML150;
+var BODY, RESPONSE_DATE, INITIATOR_TYPE, INI_TYPE_NARR, TO_FACE, FROM_FACE, INFO_TYPE, R_TYPE_NARR, IS_BANKREQ, TMPL, R_DATE, D_DATE, PASS_KIND, RUBRICA, CREATOR, CLIENT, INFO_TYPE_NARRATIVE,
+    ISSUER,  ISS_LEGAL_ADDRESS,  ISS_TYPE_LEGADDRESS,  ISS_PHONE_FAX,  ISS_EMAILS,  ISS_FULL_NAME,  ISS_POSTAL_NAME,  ISS_MAIL_ADR,  ISS_PARTAD_COUNTRY,  ISS_PARTAD_INDEX,  ISS_PARTAD_ADDRESS, ISS_BANK_PROB_RUB,
+    ISSUER2, ISS2_LEGAL_ADDRESS, ISS2_TYPE_LEGADDRESS, ISS2_PHONE_FAX, ISS2_EMAILS, ISS2_FULL_NAME, ISS2_POSTAL_NAME, ISS2_MAIL_ADR, ISS2_PARTAD_COUNTRY, ISS2_PARTAD_INDEX, ISS2_PARTAD_ADDRESS,ISS2_BANK_PROB_RUB,
+    REG, REG_FULL_NAME, REG_POSTAL_NAME, REG_MAIL_ADR, REG_PARTAD_COUNTRY, REG_PARTAD_INDEX, REG_PARTAD_ADDRESS, REG_LEGAL_ADDRESS, REG_TYPE_LEGADDRESS, REG_PHONE_FAX, REG_EMAILS, REG_BANK_PROB_RUB,
+    SHARE, total, NARRATIVE_SH, BLOCK_COUNT, FaceParamList, Sec_InfoList, PawnerList,
+    NARRATIVE_ACC_TYPE, ACC_NAME_TYPE, CODER, SCHEME, ACCOUNT_TYPE, SUBTYPE_PLACE, B_TYPE, 
+    HOLDER_ID, HOLDER_PAY_NAME, HOLDER_INN, HOLDER_ACC_RS, HOLDER_BANK_NAME, HOLDER_BANK_BIC, HOLDER_BANK_CITY, HOLDER_BANK_KORR, HOLDER_PAY_ADD_INFO, 
+    HOLDER_issuer, HOLDER_scheme_name, NUMBER, ACC, REQ_STATE, MUST_OPEN, G_ID, LP, 
+    BLOCK_AMOUNT, COMMENT;
+var FROM_name, BaseCode;
+
+var x_security_balance, x_registered_shareholders, x_information_indicator, x_basis_of_request, x_header, x_initiator_request, x_registrar, x_issuer, x_corporate_action_reference, 
+    x_bank_prop_rub, x_account_holder, x_account_dtls, x_main, x_SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT,
+    Info, Info1, Info2, InfoFrom, version, out_doc_num,out_doc_date,in_doc_num,in_reg_date,
+    laws_in_place_code, narrative, L_subordinate_legislation, holder_name, holder_party_IDs, cnt_ln, DOC_json, L_constructor,
+    T_MAIN, T_BASIS_REQUEST, T_SHARE_HOLDERS, T_SHARES_BALANCE, T_DOCS_JUR1, T_DOCS_JUR2, T_DOCS_JUR3, DOCS_LEGAL, DOCT_FOUND_REG, 
+    BASIS_REQUEST_json,
+    h, m, s, ms, operTime, counter, deadResponseTime, x_XtnsnDt, disclosure_currency,x_add_info;
+
+// ----- контейнеры для реквизитов xml документа
+var their_doc_num, their_doc_date, corp_actn_evt_id, corporate_action_code, business_service, corp_actn_evt_id2, corporate_action_code2, fName, DIR, pth, f;
+
+// ----------------------------------------------
+var MESS_CODE, ErrList1, W, W2, issuer_or_pif, LBR, RBR, LSQ, RSQ, kk, k, k0, Qnt, BlockType, REQ_ID, STATE, fSTATE, PNum, PData, PPNum, PPData, PCode, POutNum,
+    xmlNumData, xmlFileName, NUM, ImageFile, KVIT_DMAIL, FILER_ID, holderQnt, ret, IFaces, IFaces2, Mess, Storages;
+
+// ----------------------------------------------
+// Таблицы для внутренних нужд
+T_MAIN := Table(CA_REFERENCE str,
+                MESS_FUNC str,
+                ISSUER int,
+                INI_TYPE str,
+                INI_TYPE_NARR str,
+                INFO_TYPE str,
+                INFO_TYPE_NARRATIVE str,
+                FROM_FACE int,
+                B_TYPE int,
+                B_DATE date,
+                B_NUM str,
+                IS_BANKREQ int,
+                TEMPLATE str,
+                R_DATE datetime,
+                RESPONSE_DATE datetime);
+
+T_BASIS_REQUEST  := Table(bais_of_request str, narrative str, subordinate_leg str);
+T_SHARE_HOLDERS  := Table( ID int, DEPO_1 int, DEPO_1_NAME str, BANK_P_NAME str, FACE_INN str, BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str, ACCOUNT_TYPE str, ACCOUNT_TYPE_NARR str, 
+                           MUST_OPEN int, ACCOUNT_ORIGINAL str);
+T_SHARES_BALANCE := Table( LINK_SHARE_HOLDER int, DEPO_2 int, DEPO_2_NAME str, SHARE_2_ID int, AMOUNT float, BLOCK_AMOUNT float, ZALOG_AMOUNT float, PLAC_AMOUNT float, BLFL_AMOUNT float, BLTR_AMOUNT float, BLIN_AMOUNT float, 
+                                                                                               BLFC_AMOUNT  float, BLRO_AMOUNT float, BLCV_AMOUNT float);
+
+TableClear(T_MAIN);
+TableClear(T_BASIS_REQUEST);
+TableClear(T_SHARE_HOLDERS);
+TableClear(T_SHARES_BALANCE);
+//T_SHARES_BALANCE := clear(0);
+
+T_DOCS_JUR1      := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+T_DOCS_JUR2      := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+T_DOCS_JUR3      := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+DOCS_LEGAL       := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+
+// ----------------------------------------------
+BaseCode  := _Sys_setings_F.OD_SETS._BASE_CODE;
+ExtractSQL( 'Данные', 'select I.BODY,D.FROM_FACE from D_IN_MESS I left join OD_IN_DOCS D on D.DOC=I.DOC where I.DOC=:D', %doc_id, BODY, FROM_FACE);
+LBR       := '{'; RBR := '}'; LSQ := '['; RSQ := ']';
+ErrList   := '';
+fState    := 2;  //Состояние в котором создавать ЗЖРД.
+operTime  := time(_f_doc->Get_APP_OPTION('OPER_TIME'));
+x_main    :=_Metal_F->XML_Open(BODY,'');
+ret       := 0;
+G_ID      := 1;
+IFaces    := List();
+IFaces2   := List();
+breakpoint;
+try
+    //Проверяем XML по схеме
+    InfoFrom := '';
+    _F_NXML2->Get_XSD_Version;
+    if ~_F_NXML2->XMLCheck('', '', BODY, InfoFrom) then
+        ErrList := _f_report->Add_Info(ErrList, InfoFrom);
+        _Metal_F->XML_Close;
+        return(108); ////XML сообщение не соответствует XSD схеме        
+    end;
+   
+    //   блок (header), в котором указываются номер и дата сообщения. Присваевает НРД
+    //   блок (link), указывается номер и дата документа Регистратора, в ответ на который направляется данное сообщение, при этом в in_doc_num и в  in_reg_date
+    //   date указывается данные регистрации входящего документа, которые присваивает НРД-->
+    // -------------------------------------------------------    
+    Info := '';
+    if (x_main.?version) then
+        VERSION := x_main.?version;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент version не обнаружен');
+    end;
+    
+    // ----------- add_info () --------------------------------------------------------
+    deadResponseTime    := clear('');
+    disclosure_currency := clear('');
+    if (x_main.?add_info) then
+        x_add_info := x_main._add_info;
+        if x_add_info.?XtnsnDt then
+            x_XtnsnDt := x_add_info._XtnsnDt;
+            if x_XtnsnDt.?response_deadline_time then
+                //itry(deadResponseTime := datetime(x_XtnsnDt._response_deadline_time), deadResponseTime := '');
+                deadResponseTime := x_XtnsnDt._response_deadline_time;
+            end;
+            if x_XtnsnDt.?disclosure_currency then
+                //itry(disclosure_currency := datetime(x_XtnsnDt._disclosure_currency), disclosure_currency := '');
+                disclosure_currency := x_XtnsnDt._disclosure_currency;
+            end;
+        end;
+    end;
+    
+    FROM_FACE := TO_FACE := clear(0);
+    if (x_main.?header) then
+        x_header := x_main._header;
+        _F_NXML2->Inp_header_t(x_header, '<header>', their_doc_num, their_doc_date, FROM_FACE, TO_FACE, FROM_name,Info);
+        // if ~isNull(Info) then
+        //     ErrList := _f_report->Add_Info(ErrList, Info);
+        // end;
+        ErrList := _f_report->Add_Info(ErrList, Info);
+        if isNull(FROM_FACE) then
+            ErrList := _f_report->Add_Info(ErrList, 'Отправитель, указанный в элементе head, в справочниках системы не обнаружен');
+        end;
+        if isNull(TO_FACE) then
+            ErrList := _f_report->Add_Info(ErrList, 'Получатель, указанный в элементе head, в справочниках системы не обнаружен');            
+        end;        
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент header в xml запросе не обнаружен');
+    end;    
+
+    // ------------- Тип запроса (выдуманный реквизит - в XML его нет) ------------------------------------    
+    if ~isBlank(FROM_FACE) then
+        try
+            B_TYPE := _F_NXML2->Get_B_TYPE_by_FROM_FACE(FROM_FACE);
+        except
+            B_TYPE := clear(0);
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Отправитель (FROM_FACE), указанный в элементе head, не обнаружен. Вычислить реквизит "Тип запроса" невозможно.');
+    end;
+    // На случай если Get_B_TYPE_by_FROM_FACE вернет nill (хотя такой возможности не задизайнено)
+    if isBlank(B_TYPE) then
+        ErrList := _f_report->Add_Info(ErrList, 'Не удалось вычислить реквизит "Тип запроса", соответствующего представленному в XML запросе');
+    end;
+       
+    if (x_main.?business_service) then
+        business_service := x_main._business_service;
+    end;
+    // -------------- Инициатор операции (FROM_FACE) -------------------------------------------------------
+    if ~isBlank(FROM_FACE) then
+        if not (IsBlank(their_doc_num) or IsBlank(their_doc_date)) then        
+            ExtractSQL('Данные',[ select count(*)
+                                  from OD_IN_DOCS 
+                                  where THEIR_NUM = :doc_num and THEIR_DATE = :doc_date and FROM_FACE = :FROM_FACE],their_doc_num, their_doc_date,FROM_FACE,counter);
+            if counter = 0 then
+                ExecSQL( 'Данные',[ update OD_IN_DOCS
+                                    set THEIR_NUM = :doc_num, THEIR_DATE = :doc_date, FROM_FACE = :FROM_FACE
+                                    where DOC=:DOC],their_doc_num, their_doc_date, FROM_FACE ,%doc_id);
+                MainForm.UserDic.@commit;
+                MainForm.UserDic.@start;
+            else
+                Info := _f_report->Add_Info(Info, 'Документ за номером '+str(their_doc_num) +'  за дату '+str(their_doc_date)  + ' от отправителя ' + str(FROM_NAME) + 'уже был принят');
+            end;
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Отправитель (FROM_FACE), указанный в элементе head, не обнаружен. Обновить реквизиты THEIR_NUM, THEIR_DATE во входящем сообщении невозможно.');
+    end;
+    
+    // ----------- message_function / Функция сообщения --------------------------------------------
+    MESS_CODE := clear(0);
+    if (x_main.?message_function) then
+        MESS_CODE := Extract('Данные', [select NUM from OD_SYS_TABS where CODE='FCDR2017_MESSFUNC' and DOP=:DOP], x_main._message_function);
+        if isBlank(MESS_CODE) then
+            ErrList := _f_report->Add_Info(ErrList, 'Значение '+str(x_main._message_function)+' в системном классификаторе не обнаружено.');
+        else
+            MESS_CODE := x_main._message_function;
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент message_function в xml запросе не обнаружен');
+    end;
+    // ---------- doc_links / Связанные ссылки (сообщения) -----------------------------------------
+     
+
+    // ---------- corporate_action_reference / Референс, тип корпоративного действия----------------
+    Info := '';
+    corp_actn_evt_id := corporate_action_code := clear('');
+    if (x_main.?corporate_action_reference) then
+        x_corporate_action_reference := x_main._corporate_action_reference;
+        _F_NXML2->Inp_corporate_action_reference_V03(x_corporate_action_reference,  'corporate_action_reference', corp_actn_evt_id, corporate_action_code, Info);
+        if (isBlank(corp_actn_evt_id)) then
+            ErrList := _f_report->Add_Info(ErrList, 'Не задан референс корпоративного события в элементе corp_actn_evt_id');
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент corporate_action_reference не обнаружен');
+    end;
+    
+    // ----------
+    Info := '';
+    if (x_main.?SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT) then
+        x_SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT.@First;
+        While ~x_SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT.@Eof do
+            _F_NXML2->Inp_Events_linkage_t(x_SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT, 'SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT', corp_actn_evt_id2, corporate_action_code2, Info);
+            x_SETTLEMENT_TRANSACTION_ALLEGEMENT_REPORT.@Next;        
+        End;
+    end;
+
+    // ---------- Идентификационные данные Эмитента/ПИФ/ИСУ/… (лица, обязанноого по ценным бумагам). -------------------------------------
+    // ---------- Для паев ПИФ и ИСУ формируется два блока issuer. Для УК указывается ОГРН, */*/*/*/organization_code_type= OGRN. --------
+    // ---------- Для ПИФ указывается номер правил ДУ, */*/*/*/organization_code_type= TMRL. ---------------------------------------------
+    // ---------- Для остальных финансовых инструментов указывается ОГРН Эмитента,           ---------------------------------------------    
+
+
+    // -------------------------------------------------------------------------------------------
+    // DOCS       := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+    var ISS_BANK_PROB_RUB_List, ISS_DOC_FACE, COMPANY, Issuer_List, DOCT_FOUND, DOCT_FOUND2, T;
+    T           := Table(ISSUER int, CODE_TYPE str);
+    Info        := ''; Info1 := ''; Info2 := '';    
+    x_issuer    := x_main._issuer;
+    Issuer_List := List();
+    ISSUER      := clear(0);
+    DOCT_FOUND  := clear(0);    // тип документа, по которому определили лицо
+    if (x_main.?issuer) then
+        x_issuer := x_main._issuer;
+        x_issuer.@First;
+        _F_NXML2->Inp_Legal_entity_details_t(x_issuer, '<issuer>', T_DOCS_JUR1, ISS_FULL_NAME, ISS_POSTAL_NAME, ISS_MAIL_ADR, ISS_PARTAD_COUNTRY, ISS_PARTAD_INDEX, ISS_PARTAD_ADDRESS, ISS_LEGAL_ADDRESS, 
+                                                                   ISS_TYPE_LEGADDRESS, ISS_PHONE_FAX, ISS_EMAILS, ISS_BANK_PROB_RUB, ISSUER, DOCT_FOUND, IFaces, Info1);
+        if isBlank(ISSUER) then
+            if ListCount(IFaces)>0 and ~%mute then      // Нашли в справочнике более одного лица                 
+                if not _cond_body_f->Select_in_Box('Данные',   [select SELF_ID, MNEM, NAME from OD_FACES where LAST_FLAG=1 and SELF_ID in (]+replace(IFaces, #13+#10,',')+[) order by MNEM],
+                          List('MNEM=Мнемоника;20', 'NAME=Наименование;60'), 'SELF_ID', 'Выбор лица', 'Выберите лицо', 'Найдено более одного субъекта соответствующего эмитенту из XML') then
+                    Info := _f_report->Add_Info(Info, 'Не удалось установить эмитента по данным элемента <issuer>. Полное наименование определяемого субъекта:' + ISS_FULL_NAME + 
+                                                      '. Детали: ' + Info1 + '. Оператор отказался уточнить лицо.');
+                else
+                    ISSUER := _cond_body_f.Select_in_Box.ID;
+                end;
+            else
+                Info := _f_report->Add_Info(Info, 'Не удалось установить эмитента по данным элемента <issuer>. Полное наименование определяемого субъекта:' + ISS_FULL_NAME + 
+                                    '. Детали: ' + Info1);
+            end
+        end;
+        if ~isBlank(ISSUER) then
+            TableInsert(T, List('ISSUER='+str(ISSUER), 'CODE_TYPE=' + DOCT_FOUND));
+            x_issuer.@Next;
+            if ~x_issuer.@EOF then
+                _F_NXML2->Inp_Legal_entity_details_t(x_issuer, '<issuer>', T_DOCS_JUR2, ISS2_FULL_NAME, ISS2_POSTAL_NAME, ISS2_MAIL_ADR, ISS2_PARTAD_COUNTRY, ISS2_PARTAD_INDEX, ISS2_PARTAD_ADDRESS, 
+                                                                           ISS2_LEGAL_ADDRESS, ISS2_TYPE_LEGADDRESS, ISS2_PHONE_FAX, ISS2_EMAILS, ISS2_BANK_PROB_RUB, ISSUER2, DOCT_FOUND2, IFaces2, Info2);
+                if isBlank(ISSUER2) then
+                    if ListCount(IFaces2)>0 and ~%mute then
+                        if not _cond_body_f->Select_in_Box('Данные',   [select SELF_ID, MNEM, NAME from OD_FACES where LAST_FLAG=1 and SELF_ID in (]+replace(IFaces2, #13+#10,',')+[) order by MNEM],
+                                  List('MNEM=Мнемоника;20', 'NAME=Наименование;60'), 'SELF_ID', 'Выбор лица', 'Выберите лицо', 'Выберите лицо') then
+                            Info := _f_report->Add_Info(Info, 'Не удалось установить эмитента по данным элемента <issuer>. Полное наименование определяемого субъекта:' + ISS2_FULL_NAME + 
+                                                              '. Детали: ' + Info2 + '. Оператор отказался уточнить лицо.');
+                        else
+                            ISSUER2 := _cond_body_f.Select_in_Box.ID;
+                        end;
+                    else                    
+                        Info := _f_report->Add_Info(Info, 'Не удалось установить эмитента по данным элемента <issuer>. Полное наименование определяемого субъекта:' + ISS2_FULL_NAME +
+                                                '. Детали: ' + Info2);
+                    end
+                end;
+                if ~isBlank(ISSUER2) then                
+                    TableInsert(T, List('ISSUER='+str(ISSUER2), 'CODE_TYPE=' + DOCT_FOUND2));
+                end;
+            end;            
+        end;
+        if isBlank(Info) then
+            // Если зашли сюда, то все субъекты по данным из <issuer> удалось обнаружить в справочниках
+            if TableFind(T, List('CODE_TYPE=TMRL')) then
+                ISSUER  := T._ISSUER;
+                TableDelete(T);
+                
+                if T.@recordcount>0 then
+                    COMPANY := T._ISSUER;
+                else
+                    Info := _f_report->Add_Info(Info, 'В элементах <issuer> содержится информация о ПИФ, но не указана информация об управляющей компании ПИФ');
+                end;
+            else
+                // Берём первого субъекта приведенного в элементах issuer и считаем его эмитентом ЦБ
+                T.@First;
+                ISSUER  := T._ISSUER;            
+            end;
+        end;
+    else
+        Info := _f_report->Add_Info(Info, 'В документе-запросе DISCLOSURE_REQUEST обязательный элемент issuer не обнаружен');
+    end;        
+    ErrList := _f_report->Add_Info(ErrList, Info);
+    
+    // ---------------- Данные о регистраторе/головном депозитарии --------------------------------------    
+    Info := '';
+    REG  := clear(0);
+    REG_FULL_NAME := REG_POSTAL_NAME := REG_MAIL_ADR:= REG_PARTAD_COUNTRY:= REG_PARTAD_INDEX:= REG_PARTAD_ADDRESS:= REG_LEGAL_ADDRESS:= clear('');
+    REG_TYPE_LEGADDRESS := clear(0);
+    REG_PHONE_FAX := REG_EMAILS := REG_BANK_PROB_RUB := List();
+    if (x_main.?registrar) then
+        x_registrar := x_main._registrar;
+        x_registrar.@First;
+        _F_NXML2->Inp_Legal_entity_details_t(x_registrar, 'registrar', T_DOCS_JUR3, REG_FULL_NAME, REG_POSTAL_NAME, REG_MAIL_ADR, REG_PARTAD_COUNTRY, REG_PARTAD_INDEX, REG_PARTAD_ADDRESS, REG_LEGAL_ADDRESS, REG_TYPE_LEGADDRESS, REG_PHONE_FAX, REG_EMAILS, REG_BANK_PROB_RUB, REG, DOCT_FOUND_REG, Info);
+    end;
+    
+    // ---------- Тип инициатора запроса на сбор списка---------------------------------------------    
+    Info          := '';
+    INI_TYPE_NARR :='';    
+    if (x_main.?initiator_request) then
+        x_initiator_request := x_main._initiator_request;
+        if (x_initiator_request.?initiator_request_type_code) then
+            // initiator_request_type_code не может быть пустым, поскольку XML предварительно должна пройти проверку на XSD
+            INITIATOR_TYPE := Extract('Данные', [select DOP from OD_SYS_TABS where CODE = 'FCDR2017_INITYPE' and DOP = :DOP], x_initiator_request._initiator_request_type_code);
+            if isBlank(INITIATOR_TYPE) then
+                ErrList := _f_report->Add_Info(ErrList, _F_NXML2->Add_InfoWay('initiator_request','Значение '+x_initiator_request._initiator_request_type_code+ 'не поддерживается классификатором FCDR2017_INITYPE'));
+            else
+                if INITIATOR_TYPE='OTHR' then
+                    INI_TYPE_NARR := x_initiator_request._narrative;                
+                end;
+            end;
+        else
+            ErrList := _f_report->Add_Info(ErrList, _F_NXML2->Add_InfoWay('initiator_request','Обязательный элемент initiator_request_type_code в xml запросе не обнаружен'));
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент initiator_request в xml запросе не обнаружен');
+    end;
+    
+    // -------------- Основание запроса -----------------------------------------    
+    Info := '';
+    TableClear(T_BASIS_REQUEST);
+    laws_in_place_code := narrative := '';
+    L_subordinate_legislation := List();
+    BASIS_REQUEST_json        := List();
+    kk := 1;
+    //breakpoint;
+    if (x_main.?basis_of_request) then
+        x_basis_of_request := x_main._basis_of_request;
+        x_basis_of_request.@First;
+        While ~x_basis_of_request.@EOF do
+            _F_NXML2->Inp_Laws_in_place_t(x_basis_of_request, 'basis_of_request', laws_in_place_code, narrative, L_subordinate_legislation, Info);
+            L_subordinate_legislation := _F_XML->Get_Multiple_TAG(BODY, 'basis_of_request', kk, 'subordinate_legislation');
+            
+            // T_BASIS_REQUEST  := Table(bais_of_request str, narrative str, subordinate_leg List);
+            T_BASIS_REQUEST.@APPEND;
+            T_BASIS_REQUEST._bais_of_request := laws_in_place_code;
+            T_BASIS_REQUEST._narrative       := narrative;
+            //T_BASIS_REQUEST._subordinate_leg := L_subordinate_legislation;
+            LP := List();
+            if ListCount(L_subordinate_legislation)>0 then
+                k := 0; 
+                While k<ListCount(L_subordinate_legislation) do                    
+                    // ListAdd( T_BASIS_REQUEST._subordinate_leg, replace(ListGet(L_subordinate_legislation, k), '"', '\"'));
+                    ListAdd( LP, replace(ListGet(L_subordinate_legislation, k), '"', '\"'));
+                    inc(k);
+                End;
+            end;
+            T_BASIS_REQUEST._subordinate_leg := LP;
+            T_BASIS_REQUEST.@POST;
+            
+            ListAdd(BASIS_REQUEST_json, iif(kk=1,'',',')+'{"GROUND_CODE":"'+laws_in_place_code+'"');
+            if ~isBlank(narrative) then
+                ListAdd(BASIS_REQUEST_json, ',"NARRATIVE":"' + replace(narrative, '"', '\"') +'"');
+            end;
+            ListAdd(BASIS_REQUEST_json, ',"GROUND_NAME":"GROUND_NAME"');
+            if ListCount(L_subordinate_legislation)>0 then
+                k := 0; 
+                ListAdd(BASIS_REQUEST_json, ', "__SUBORDINATE" : [');
+                While k<ListCount(L_subordinate_legislation) do                    
+                    ListAdd(BASIS_REQUEST_json, iif(k=0, '',',')+'"'+ replace(ListGet(L_subordinate_legislation, k), '"', '\"')+'"');
+                    inc(k);
+                End;
+                ListAdd(BASIS_REQUEST_json, ']');
+            end;
+            ListAdd(BASIS_REQUEST_json, '}');
+            x_basis_of_request.@Next;
+            inc(kk);
+        End;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент basis_of_request в xml запросе не обнаружен');
+    end;
+    
+    // ------------- Тип запрашиваемой информации (тип списка / информации о лицах) ------------------------------------------    
+    Info := '';
+    INFO_TYPE_NARRATIVE := '';
+    if (x_main.?information_indicator) then
+        x_information_indicator := x_main._information_indicator;
+        _F_NXML2->Inp_information_type_V02_t( x_information_indicator, 'information_indicator',INFO_TYPE, IS_BANKREQ, TMPL, R_TYPE_NARR, Info);
+        INFO_TYPE_NARRATIVE := R_TYPE_NARR;
+        if UpperCase(INFO_TYPE)='OTHR' then
+            if isBlank(INFO_TYPE_NARRATIVE) then
+                ErrList := _f_report->Add_Info(ErrList, 'Не указано текстовое описание типа запрашиваемой информации. При значении OTHR в элементе information_type_code, текстовое описание - обязательно');
+            end;
+        end;
+        ErrList := _f_report->Add_Info(ErrList, Info);
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент information_indicator в xml запросе не обнаружен');
+    end;
+
+    // -------- Дата, на окончание операционного дня, которой должны быть составлены данные -----------------------------------    
+    Info := '';
+    if (x_main.?record_date) then
+        try
+            R_DATE := DateTime(str(date(_F_XML->Get_DateTime(x_main._record_date)))+' '+str(operTime));
+            DecodeTime( R_DATE, h, m, s, ms );
+            if h<=12 then
+                R_DATE := R_DATE + 1;
+            end;
+        except
+            ErrList := _f_report->Add_Info(ErrList, 'Ошибка при извлечении даты, на окончание операционного дня, которой должны быть составлены данные record_date='+str(x_main._record_date));
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент record_date в xml запросе не обнаружен');
+    end;
+
+    // -------- Дата, до которой необходимо предоставить Список / информацию о лицах отправителю Запроса, включая эту дату  -----------------------------------    
+    Info := '';
+    if (x_main.?response_deadline) then
+        try
+            if isBlank(deadResponseTime) then
+                RESPONSE_DATE := date(_F_XML->Get_DateTime(x_main._response_deadline));
+            else
+                RESPONSE_DATE := DateTime(str(date(_F_XML->Get_DateTime(x_main._response_deadline)))+' '+str(deadResponseTime));                
+            end;
+        except
+            ErrList := _f_report->Add_Info(ErrList, 'Ошибка при извлечении даты, на окончание операционного дня, которой должны быть составлены данные record_date='+str(x_main._response_deadline));
+        end;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент response_deadline в xml запросе не обнаружен');
+    end;
+    // -------- Запрос списка
+    Info      := '';
+    ErrList1  := '';
+    REQ_STATE := 'BEGIN_AUTO';
+    if (x_main.?registered_shareholders) then
+        x_registered_shareholders := x_main._registered_shareholders;
+        W := '<registered_shareholders>';
+        x_registered_shareholders.@First;
+        While ~x_registered_shareholders.@EOF do
+            Info   := '';
+            NUMBER := '';
+            // ------- Номер счета, по которому запрашивается информация. Лицевой счет номинального держателя в реестре --------
+            if (x_registered_shareholders.?account_dtls) then
+                x_account_dtls := x_registered_shareholders._account_dtls;
+                // ACCOUNT_TYPE  - код по классификации FCDR2017_02  
+                // SUBTYPE_PLACE - код по классификации Fansy 
+                _F_NXML2->Inp_Account_dtls_v04_t(x_account_dtls, 'account_dtls', NUMBER, ACCOUNT_TYPE, SUBTYPE_PLACE, NARRATIVE_ACC_TYPE, ACC_NAME_TYPE, CODER, SCHEME, Info);
+                ErrList1 := _f_report->Add_Info(ErrList1, Info);
+            else
+                ErrList1 := _f_report->Add_Info(ErrList1, 'Обязательный элемент account_dtls в xml запросе не обнаружен');
+            end;
+            if isBlank(NUMBER) then
+                ErrList1 := _f_report->Add_Info(ErrList1, 'Один из номеров счета хранения в XML пуст. Поиск в справочнике по номеру не возможен.');
+            end;
+            
+            Info             := '';
+            holder_party_IDs := List();  
+            HOLDER_ID        := clear(0);
+            holderQnt        := 0;
+            // -------- Информация о зарегистрированном лице, по счету которого запрашивается информация            
+            if (x_registered_shareholders.?account_holder) then
+                x_account_holder := x_registered_shareholders._account_holder;
+                _F_NXML2->Inp_Party_id_name_V03_t_with_FACE(x_account_holder, holder_party_IDs, holder_name, HOLDER_ID, holderQnt, Info);
+                ErrList1 := _f_report->Add_Info(ErrList1, Info);
+            else
+                ErrList1 := _f_report->Add_Info(ErrList1, 'Обязательный элемент account_holder в xml запросе не обнаружен');
+            end;
+            
+            if isBlank(HOLDER_ID) then
+                ErrList1 := _f_report->Add_Info(ErrList1, 'Не удалось обнаружить владельца счета <'+str(NUMBER)+'> по поисковым признакам: '+holder_party_IDs);
+            end;
+            
+            // Для поиска счета должны быть без ошибок считаны NUMBER и HOLDER_ID из элементов account_dtls и account_holder
+            if ~isBlank(NUMBER) and ~isBlank(HOLDER_ID) then
+                // Поиск счета
+                cnt_ln := 0; Storages := List(); Mess := '';
+                //ACC    := _F_NXML2->Find_DepoLN( NUMBER, HOLDER_ID, cnt_ln);  
+                //ACC    := _F_NXML2->Find_DepoLN( NUMBER, clear(0), cnt_ln );
+                ACC    := _F_NXML2->Find_DepoLN( NUMBER, ISSUER, cnt_ln, Mess, Storages );
+                if (isNull(ACC)) then
+                    REQ_STATE    := 'BEGIN_DOUBT';
+                    ACCOUNT_TYPE := clear(0);                    
+                    MUST_OPEN    := 0;
+                    ret          := -1;
+                    // ErrList1     := _f_report->Add_Info(ErrList1, 'Место хранения с номером счета у хранителя '+NUMBER + ' в справочнике активных счетов не обнаружено');                    
+                else
+                    if (ACC=-1) then 
+                       // Нашли много счетов, запустим поиск с фильтром                
+                        REQ_STATE    := 'BEGIN_DOUBT';
+                        ACCOUNT_TYPE := clear(0);                        
+                        ACC          := clear(0);
+                        MUST_OPEN    := 0;
+                        ret          := -2;
+                        //ErrList1     := _f_report->Add_Info(ErrList1, 'Найдено несколько мест хранения с номером счета у хранителя '+NUMBER + ' в справочнике активных счетов');
+                    else
+                        MUST_OPEN    := 1;
+                    end;
+                end;
+                ErrList1 := _f_report->Add_Info(ErrList1, Mess);
+                
+                T_SHARE_HOLDERS.@APPEND;
+                T_SHARE_HOLDERS._ID                 := G_ID; inc(G_ID);
+                T_SHARE_HOLDERS._DEPO_1             := ACC;                
+                T_SHARE_HOLDERS._ACCOUNT_TYPE       := ACCOUNT_TYPE;
+                T_SHARE_HOLDERS._ACCOUNT_ORIGINAL   := NUMBER;
+                T_SHARE_HOLDERS._MUST_OPEN          := MUST_OPEN;                
+                if ACCOUNT_TYPE = '13' then
+                    T_SHARE_HOLDERS._ACCOUNT_TYPE_NARR := NARRATIVE_ACC_TYPE;
+                //else
+                //    T_SHARE_HOLDERS._ACCOUNT_TYPE := '';
+                end;
+                T_SHARE_HOLDERS.@POST;                    
+                if (x_registered_shareholders.?bank_prop_rub) then
+                    W2 := _F_NXML2->Add_Way(W, 'bank_prop_rub');
+                    x_bank_prop_rub  := x_registered_shareholders._bank_prop_rub;
+                    Info := '';
+                    _F_NXML2->Inp_Bank_Prop_Rub_V02_t( x_bank_prop_rub, W2,  Info, HOLDER_PAY_NAME, HOLDER_INN, HOLDER_ACC_RS, HOLDER_BANK_NAME, HOLDER_BANK_BIC, HOLDER_BANK_CITY, 
+                                                                                   HOLDER_BANK_KORR, HOLDER_PAY_ADD_INFO, HOLDER_issuer, HOLDER_scheme_name );
+                    // T_SHARE_HOLDERS  := Table(DEPO int, NUMBER str, BANK_P_NAME str, FACE_INN str, BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str);
+                    // Пишем б/реквизиты в любом случае
+                    T_SHARE_HOLDERS.@EDIT;
+                    T_SHARE_HOLDERS._BANK_P_NAME := HOLDER_PAY_NAME;
+                    T_SHARE_HOLDERS._FACE_INN    := HOLDER_INN;
+                    T_SHARE_HOLDERS._BANK_P_ACNT := HOLDER_ACC_RS;                        
+                    T_SHARE_HOLDERS._BANK_NAME   := HOLDER_BANK_NAME;
+                    T_SHARE_HOLDERS._BANK_CITY   := HOLDER_BANK_CITY;
+                    T_SHARE_HOLDERS._BANK_BIC    := HOLDER_BANK_BIC;
+                    T_SHARE_HOLDERS._BANK_KORR   := HOLDER_BANK_KORR; 
+                    T_SHARE_HOLDERS.@POST;
+                end;
+            end;     // if ~isBlank(NUMBER) and ~isBlank(HOLDER_ID) then
+            
+            if (x_registered_shareholders.?security_balance) then
+                x_security_balance := x_registered_shareholders._security_balance;
+                //SHARE_HOLDERS  = Table(DEPO int, NUMBER str, BANK_P_NAME str, FACE_INN str, BANK_P_ACNT str, BANK_NAME str, BANK_CITY str, BANK_BIC str, BANK_KORR str)
+                //SHARES_BALANCE = Table(DEPO_2 int, NUMBER str, SHARE int, AMOUNT float, BLOCK_AMOUNT float, ZALOG_AMOUNT float, PLAC_AMOUNT float, BLFL_AMOUNT float, BLTR_AMOUNT float, BLIN_AMOUNT float, 
+                //                                                                                          BLFC_AMOUNT float, BLRO_AMOUNT float, BLCV_AMOUNT) 
+                x_security_balance.@First;
+                W2 := _F_NXML2->Add_Way(W, 'security_balance');
+                While ~x_security_balance.@EOF do
+                    _F_NXML2->Inp_Security_balance_t_v03(x_security_balance,  W2,
+                                      SHARE        , 
+                                      total        ,   
+                                      NARRATIVE_SH , 
+                                      BLOCK_COUNT  , 
+                                      FaceParamList, 
+                                      Sec_InfoList , 
+                                      PawnerList   , 
+                                      Info          );
+                    if isNull(SHARE) then SHARE := 0; end;
+                    if (SHARE <> 0) then                        
+                        T_SHARES_BALANCE.@APPEND;
+                        T_SHARES_BALANCE._LINK_SHARE_HOLDER := T_SHARE_HOLDERS._ID;
+                        T_SHARES_BALANCE._DEPO_2            := ACC;
+                        T_SHARES_BALANCE._DEPO_2_NAME       := NUMBER;
+                        T_SHARES_BALANCE._SHARE_2_ID        := SHARE;
+                        T_SHARES_BALANCE._AMOUNT            := total;
+                        T_SHARES_BALANCE._BLOCK_AMOUNT      := BLOCK_COUNT;
+                        T_SHARES_BALANCE.@POST;       
+                        if (ListCount(PawnerList)>0) then
+                            k0 := 0;
+                            While k0<ListCount(PawnerList) do
+                                T_SHARES_BALANCE.@EDIT;
+                                BlockType := ListVal(PawnerList, str(k0) + '_XML_BLOCK_TYPE_CODE');
+                                Qnt       := float(ListVal(PawnerList, str(k0) + '_B_QUANTITY'));
+                                if BlockType = 'COLO' then T_SHARES_BALANCE._ZALOG_AMOUNT := Qnt; end;
+                                if BlockType = 'PLAC' then T_SHARES_BALANCE._PLAC_AMOUNT := Qnt; end;
+                                if BlockType = 'BLFL' then T_SHARES_BALANCE._BLFL_AMOUNT := Qnt; end;
+                                if BlockType = 'BLTR' then T_SHARES_BALANCE._BLTR_AMOUNT := Qnt; end;
+                                if BlockType = 'BLIN' then T_SHARES_BALANCE._BLIN_AMOUNT := Qnt; end;
+                                if BlockType = 'BLFC' then T_SHARES_BALANCE._BLFC_AMOUNT := Qnt; end;
+                                if BlockType = 'BLRO' then T_SHARES_BALANCE._BLRO_AMOUNT := Qnt; end;
+                                if BlockType = 'BLCV' then T_SHARES_BALANCE._BLCV_AMOUNT := Qnt; end;
+                                T_SHARES_BALANCE.@POST;
+                                inc(k0);
+                            end;
+                        end
+                    else
+                        // Бумага в справочнике не обнаружена
+                        ErrList1 := _f_report->Add_Info(ErrList1, 'Финансовый инструмент в справочниках не обнаружен. Параметры финансового инструмента: '+Sec_InfoList);
+                    end;
+                    x_security_balance.@Next;
+                End
+            else
+                ErrList1 := _f_report->Add_Info(ErrList1, 'Обязательный элемент security_balance в xml запросе не обнаружен');
+            end;        
+        
+            x_registered_shareholders.@Next;
+        End;
+    else
+        ErrList := _f_report->Add_Info(ErrList, 'Обязательный элемент registered_shareholders в xml запросе не обнаружен');
+    end;    
+    ErrList := _f_report->Add_Info(ErrList, ErrList1);
+    
+    // ----------  D_DATE (Дата документа) --------------------------------------------------------------------------------------------------    
+    try
+        D_DATE    := now;
+    except
+        ErrList := _f_report->Add_Info(ErrList, 'Проблемы с получением текущей даты для реквизита D_DATE.');
+    end;    
+
+    // ////........................................
+    // Создаём документус.
+    L_constructor := List('CA_REFERENCE=' +str(corp_actn_evt_id),
+                          'MESS_FUNC='    +str(MESS_CODE),
+                          'ISSUER='       +str(ISSUER),  
+                          'INI_TYPE='     +str(INITIATOR_TYPE),
+                          'INI_TYPE_NARR='+str(INI_TYPE_NARR),
+                          'INFO_TYPE='    +str(INFO_TYPE),
+                          'INFO_TYPE_NARRATIVE=' + str(INFO_TYPE_NARRATIVE),
+                          'FROM_FACE='    +str(FROM_FACE), 
+                          'B_TYPE='       +str(B_TYPE), 
+                          'B_DATE='       +str(date(their_doc_date)),
+                          'B_NUM='        +str(their_doc_num),
+                          'IS_BANKREQ='   +str(IS_BANKREQ),
+                          'TEMPLATE='     +str(TMPL), 
+                          'R_DATE='       +str(R_DATE),
+                          'RESPONSE_DATE='+str(RESPONSE_DATE));
+    TableInsert(T_MAIN, L_constructor);
+    if isBlank(ErrList) or (ret=-1 or ret=-2) then
+        try                    
+            //REQ_ID  := _F_NXML2->Make_I_DISCLOSURE_REQ_json(AnsiToUTF8(DOC_json), D_DATE, REQ_STATE{Состояние документа}, %doc_id {%KVIT});
+            REQ_ID  := _F_NXML2->Make_I_DISCLOSURE_REQ_table(T_MAIN, T_SHARE_HOLDERS, T_SHARES_BALANCE, T_BASIS_REQUEST, D_DATE, REQ_STATE{Состояние документа}, %doc_id {%KVIT});
+        except
+            ErrList := _f_report->Add_Info(ErrList, 'Ошибка при создании документа Запрос на сбор списка/информации о лицах' + #13+#10 + '-----------------------' + #13+#10 +
+                       Exception.text + #13+#10 + 'DOC='+ #13+#10+L_constructor{DOC_json});
+            ret := 0;
+            return(ret);
+            //raise('Ошибка при создании документа Запрос на сбор списка/информации о лицах' + #13+#10 + '-----------------------' + #13+#10 +
+            //       Exception.text + #13+#10 + 'DOC='+ #13+#10+L_constructor{DOC_json});
+        end;        
+            //SDP_InDocFiler_Add(%DOC:int; %CONTRACT:int; %FUND:int; %CORR_FACE:int; %DOC_NUM:str; %DOC_DATE:datetime; %NUM:str; %D_DATE:datetime; %COMMENT, %MESS, %FILE_NAME, %CORR_NUM :str; %CORR_DATE:datetime;
+            // %PLACE:int; %ACCOUNT:int; %PASS_KIND:int; %RUBRICA :int; %CREATOR :int;%MUTE:int) 
+        
+        try
+            if MyBase in List('SDP'{, 'DEMO'}) then
+                ExtractSQL('Данные', [select m.FILE_NAME, d.NUM, d.IMAGEFILE, d.KVIT from D_IN_MESS m, OD_DOCS d where m.DOC=:D and m.DOC=d.ID], %doc_id,
+                   xmlFileName, NUM, ImageFile, KVIT_DMAIL );
+                xmlNumData:=FIO->ExtractFileName(xmlFileName, 2);
+                if copy(xmlNumData,5,1)='_' and copy(xmlNumData,8,1)='_' and copy(xmlNumData,11,3)=' - ' and // по последним измышлениям SDP
+                  (copyRight(xmlNumData,1)=']' or copyRight(xmlNumData,3)=']_R') then // ГГГГ_ММ_ДД - Номер_ччммсс_Наименование документа_(КОД вх)_[исх.Номер]_R
+                
+                    _f_ixml->Get_Params_From_SDPFileName(xmlNumData);   //F_DATE:Datetime,DOC_NUM:str,DOC_NAME:str,DOC_CODE:str,ORIG_NUM:str,IS_R:int);
+                    PPData   := _f_ixml.Get_Params_From_SDPFileName.F_DATE;
+                    PPNum    := _f_ixml.Get_Params_From_SDPFileName.DOC_NUM;
+                    PCode   := _f_ixml.Get_Params_From_SDPFileName.DOC_CODE;
+                    POutNum := _f_ixml.Get_Params_From_SDPFileName.ORIG_NUM;
+                    
+                    SelectSQL('Данные', [select NUM, NAME from OD_USR_TABS where CODE='RUBRICATOR' and DOP=:N], PCode, RUBRICA, COMMENT,exit);  //пытаемся найти рубрику по наименованию поручения
+                    SelectSQL('Данные', [select ID from OD_OPERATORS where f_Left(f_Upper(USER_DOL),9)='ADMIN_AVTO'], CREATOR, exit);
+                    
+                    PNum  := their_doc_num;
+                    PData := their_doc_date;
+                    _F_IXML150.SDP_InDocFiler_Add.STATE := fSTATE; 
+                    //_F_IXML150->SDP_InDocFiler_Add(REQ_ID, clear(0), clear(0), FROM_FACE, PNum, PData, ''{PPNum}, clear(date('31.12.1899')){PPData}, COMMENT, ''{body}, '', '' {%POutNum}, clear(now),
+                    //        Clear(0), clear(0){CLIENT}, 8, RUBRICA, CREATOR, %Mute);
+                    _F_IXML150->SDP_InDocFiler_Add(REQ_ID, clear(0), clear(0), FROM_FACE, PNum, PData, PPNum, PPData, COMMENT, ''{body}, '', '' {%POutNum}, clear(now),
+                            Clear(0), clear(0){CLIENT}, 8, RUBRICA, CREATOR, %Mute);
+                else
+                    ErrList := _f_report->Add_Info(ErrList, 'Имя файла должно соответствовать шаблону "вхN_ГГГГММДД.xml" или "ГГГГ_ММ_ДД - Num_ГГГГММДД.xml" или "ГГГГ_ММ_ДД - Num_ччммсс_Name_(Code)_[outNum]_R.xml",'+
+                            ' где Num - номер документа. Например, "вх0001/9_20051028.xml" или "2013_04_18 - 4_2013_04_18.xml"');                    
+                end
+            else
+                COMMENT                         := 'Запрос на сбор списка / информации о лицах';
+                // _F_DOC.InDocFiler_Add.STATE     := fSTATE;
+                _F_DOC.InDocFiler_Add.PASS_KIND := 8; //ЭДО
+                //_F_DOC.InDocFiler_Add.RUBRICA  := RUBRICA;
+                //_F_DOC.InDocFiler_Add.ACCOUNT  := CLIENT;
+                _F_DOC.InDocFiler_Add.CREATOR   := CREATOR;            
+                _F_DOC.InDocFiler_Add.MUTE      := %Mute;
+                FILER_ID := _F_DOC->InDocFiler_Add( REQ_ID, clear(0), clear(0), FROM_FACE, their_doc_num, their_doc_date, ''{PPNum}, clear(date('31.12.1899')){PPData}, COMMENT, '', '', ''{%POutNum}, clear(now));
+                ExecSQL('Данные', [update OD_DOCS set STATE=:ds, id=0 where ID=:gid], fState, FILER_ID);
+            end;    
+        except
+            dummy
+        end;        
+    end;    
+    // ---------------------------------------------------------------------------------------------------------
+    // -- Диагностика
+    //if (UpperCase(BaseCode)='SDP') then 
+    if _F_NXML2->Get_Option_FCDR('ENABLE_DEBUG_INFO') then
+        fName := CreateGUID;
+        DIR   := OptionsDlg.Export_Dir.Text+iif(copy(OptionsDlg.Export_Dir.Text, length(OptionsDlg.Export_Dir.Text), 1)='\','','\');
+        pth   := FIO->MakeFileName( DIR , fName, 'xml');
+        f     := FIO->AssignFile( pth );
+        FIO->Rewrite(f);
+        FIO->Write(f, AnsiToUTF8(DOC_json));
+        FIO->CloseFile(f);
+    end;
+except
+    if IsBlank(ErrList) then
+        ErrList:=EXCEPTION.Text;
+    else
+        ErrList:=_f_report->Add_Info(ErrList, EXCEPTION.Text);
+    end;
+    _Metal_F->XML_Close;    
+    //raise(ErrList);
+end;
+
+return(ret);

@@ -1,0 +1,140 @@
+//Inp_Security_balance_t_V03 (%ds:int;  %Way:str;   SHARE :int; total:float ;  NARRATIVE:Str; BLOCK_COUNT:int; FaceParamList:List; Sec_InfoList:List; PawnerList:list;Info:Str);
+
+// Чтение Баланса по ценной бумаге
+//SVS
+
+
+//-----------------------------------------------------------------------------
+
+// Парамметры, которые могут быть возвращены (если они есть!) в списке   PawnerList
+// формат списка: NAME=VALUE
+// Строк имеет префикс в виде  порядкового номера блокировки плюс символ "_"  Пример: (1_ID=)
+//B_QUANTITY= количество заблокированных ЦБ для определенного типа блокировки
+//XML_BLOCK_TYPE_CODE=  код типа блокировки  по НРД
+//NARRATIVE= текстовое описание блокировки
+//B_TYPE= код типа блокировки по ФЭНСИ
+//PLEGEE_ACCOUNT_ID  счет залогодержателя (Не по типу, такого типа теперь нет!)
+//PLEGEE_ACCOUNT_TYPE тип счета залогодержателя
+//PLEGEE_ACCOUNT_NARRATIVE описание счета залогодержателя
+//PLEDGEE_NARRATIVE  описание залогодержателя
+//ISUR=  1 = залогодержатель - юрик
+//FACEID= ID залогодержателя в ФЭНСИ, если 0 то не нашли
+//FACENAME=  наименование залогодержателя
+//SHORT_NAME= короткое наименование залогодержателя
+//-----------------------------------------------------------------------------
+
+// Парамметры, которые могут быть возвращены (если они есть!) в спискеFaceParamList
+//FACENAME=     Наименование лица
+//DOC_TYPE=     тип документа в сист классификаторе FACE_DOCS
+//DOC_SER=      серия документа
+//DOC_NUM=      номер документа
+//DOC_DAT=      дата документа
+//DOC_PLACE=    место выдачи документа
+//COUNTRY=      код страны (ISO LAT 2 кажется?)
+//ADDRESS=      адрес
+//INDEX_=       индекс адреса
+//PLAIN=        адрес в формтае plain
+//COMMON_ADDR = обобщенный адрес
+//OGRN=         код ОГРН
+//OGRN_DATE=    Дата выдачи  ОГРН
+//OGRN_PLACE=   место выдачи ОГРН
+//NATIONALITY   Национальность
+//DATE_BIRTH    дата рождения
+//BIRTHPLACE    место рождения
+
+//-----------------------------------------------------------------------------
+// Парамметры, которые могут быть возвращены (если они есть!) в списке   Sec_InfoList  подробнее см     Inp_Security_info_t
+// формат списка: NAME=VALUE
+//S_CLASS=     Вид ценной бумаги = S_CLASS
+//CFI=         код  CFI
+//nominal=     номинад
+//ccy_code=    Код валюты номинала
+//reg_num=     Номер гос. регистрации
+//ISIN=        код ISIN
+//PSC=         proprietary_security_code код ЦБ
+//FIT=         Код вида финансового инструмента
+//S_TYPE=      Тип ценной бумаги
+//S_CAT=       Категория ценной бумаги по предоставляемым правам
+//-----------------------------------------------------------------------------
+
+var InfoFrom := '';
+var b_quantity;
+var x_security,x_total,x_blocked,x_b_quantity,x_block_type;
+var xml_block_type_code, b_type, plegee_account_id, plegee_account_type    ,plegee_account_narrative,pledgee_narrative,  IsUr,FaceId,FaceName,Short_Name;
+var W;
+var NN,JJ;
+var S;
+ BLOCK_COUNT:= 0;
+PawnerList := List();
+FaceParamList := List();
+//------------------------------------------------------------------------------------
+// Парамметры, которые могут быть возвращены (если они есть!) в списке   Sec_InfoList
+// формат списка: NAME=VALUE
+//S_CLASS=     Вид ценной бумаги = S_CLASS
+//CFI=         код  CFI
+//nominal=     номинад
+//ccy_code=    Код валюты номинала
+//reg_num=     Номер гос. регистрации
+//ISIN=        код ISIN
+//PSC=         proprietary_security_code код ЦБ
+//FIT=         Код вида финансового инструмента
+//S_TYPE=      Тип ценной бумаги
+//S_CAT=       Категория ценной бумаги по предоставляемым правам
+//------------------------------------------------------------------------------------
+if %ds.?security then
+    x_security :=  %ds._security;
+   _F_NXML2->Inp_Security_info_V3_t(x_security,  %Way,  InfoFrom, SHARE, Sec_InfoList);
+    Info := _f_report->Add_Info(Info,InfoFrom);
+else
+  Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Блок <security_balance_t>. Наличие  тэга <security>  является обязательным '));
+end;
+
+if %ds.?total then
+   x_total :=  %ds._total;
+   total := _F_NXML2->Inp_Quantity_choice_t(x_total);
+else
+  total := 0.0;
+  Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Блок <security_balance_t>. Наличие  тэга <total>  является обязательным '));
+end;
+if %ds.?blocked then
+// Не обязательный , множественный
+   x_blocked := %ds._blocked;
+   W := _F_NXML2->Add_Way(%Way, 'blocked');
+   while not x_blocked.@eof do
+      x_b_quantity := x_blocked._quantity;
+      b_quantity  := _F_NXML2->Inp_Quantity_choice_t(x_b_quantity);
+       if x_blocked.?block_type then
+         // ИСправил в следующем выражении знак ? на знак _ Как это жило - не знаю. SVS 30.11.2015
+          x_block_type := x_blocked._block_type;
+              InfoFrom := '';
+              FaceParamList := List();
+              _F_NXML2->Inp_block_type_t(x_block_type,W, xml_block_type_code,narrative,b_type,plegee_account_id, plegee_account_type, plegee_account_narrative, pledgee_narrative,
+                                      IsUr, FaceId, FaceName, Short_Name, FaceParamList, InfoFrom);
+                Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, InfoFrom));
+              INC(BLOCK_COUNT);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_B_QUANTITY='+Str(b_quantity));
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_XML_BLOCK_TYPE_CODE='+xml_block_type_code);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_NARRATIVE='+narrative);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_B_TYPE='+Int(b_type));
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_PLEGEE_ACCOUNT_ID='+plegee_account_id);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_PLEGEE_ACCOUNT_TYPE='+Int(plegee_account_type));
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_PLEGEE_ACCOUNT_NARRATIVE='+plegee_account_narrative);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_PLEDGEE_NARRATIVE='+pledgee_narrative);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_ISUR='+Int(IsUr));
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_FACEID='+Int(FaceId));
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_FACENAME='+FaceName);
+              ListAdd(PawnerList,str(BLOCK_COUNT)+'_SHORT_NAME='+Short_Name);
+              NN :=ListCount(FaceParamList);
+              JJ := 0;
+              if NN > 0 then
+                 while JJ < NN do
+                    S :=ListGet(FaceParamList,JJ);
+                    S := str(BLOCK_COUNT)+'_'+S;
+                    ListAdd(PawnerList,S);
+                    INC(JJ);
+                 end;
+              end;
+       end;
+      x_blocked.@next
+   end;
+end;

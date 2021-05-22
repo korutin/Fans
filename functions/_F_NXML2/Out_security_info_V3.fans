@@ -1,0 +1,113 @@
+//Out_security_info_V3(%Tag:Str, %IsCode:Str, %Share:Int, %COAF:Str, %security_evt_id:Str, %security_evt_lnk_list:List, %Way:Str, Info:Str)
+//Вывод блока security_invo_V3 (Ценная бумага) в тэг %Tag
+//%Share                 - ID ценной бумаги
+//%COAF                  - Официальный референс корпоративного действия  (COAF)
+//%security_evt_id       - Референс корпоративного действия по ценной бумаге
+//%security_evt_lnk_list - Референс связанного корпоративного действия  по ценной бумаге. Список в формате COAF;security_evt_id
+//SEG
+
+var InfoFrom, security_classification, financial_instrument_type, security_category, security_type, S_CLASS, TYPE_ID, DATE_REG, SH_CODE, SH_CODER, s, i, n, C, SecrEvtId;
+
+Info:='';
+%Way:=_F_NXML2->Add_Way(%Way, %Tag);
+
+_f_report->GetShare(%Share);
+S_CLASS:=_f_report.GetShare.Class_id;
+TYPE_ID:=_f_report.GetShare.Type_id;
+if IsBlank(_f_report.GetShare.DATE_REG) then 
+   DATE_REG:=_f_report.GetShare.BirthDate;
+else
+   DATE_REG:=_f_report.GetShare.DATE_REG;
+end;
+
+Out('<'+%Tag+'>');
+
+  security_classification:=_F_NXML2->Set_security_classification_by_CLASS(S_CLASS, InfoFrom);
+  if IsBlank(security_classification) then
+     Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, InfoFrom)); 
+  else
+     _F_XML->Out_TAG('security_classification', security_classification);  //Вид ценной бумаги
+  end;   
+
+  if ~IsBlank(_f_report.GetShare.CFI) then
+     _F_XML->Out_TAG('security_classification_CFI', _f_report.GetShare.CFI);  //Код вида ценной бумаги (CFI)
+  end;
+
+  financial_instrument_type:=_F_NXML2->Set_financial_instrument_type(S_CLASS, TYPE_ID, _f_report.GetShare.IsCo, _f_report.GetShare.IsFM);
+  if ~IsBlank(financial_instrument_type) then
+     _F_XML->Out_TAG('financial_instrument_type', financial_instrument_type);  //Код вида финансового инструмента
+  end;
+  
+  security_category:=_F_NXML2->Set_security_category(S_CLASS, TYPE_ID);
+  if ~IsBlank(security_category) then
+     _F_XML->Out_TAG('security_category', security_category);  //Категория ценной бумаги по предоставляемым правам
+  end;
+  
+  security_type:=_f_report.GetShare.ShareType;
+  if ~IsBlank(security_type) then
+    if length(security_type)>150 then
+      security_type:=CopyLeft(security_type, 150);
+    end;
+    _F_XML->Out_TAG('security_type', security_type);  //Тип ценной бумаги
+  end;  
+  
+  if ~IsBlank(_f_report.GetShare.NOMINAL) and ~IsBlank(_f_report.GetShare.Nom_Val_sysname) then
+     _F_NXML2->Out_currency_and_amount('nominal_value', _f_report.GetShare.Nom_Val_sysname, _f_report.GetShare.NOMINAL, %Way, InfoFrom);
+     Info:=_F_XML->Add_Info(Info, InfoFrom);
+  end;   
+
+  if (S_CLASS in List(1,2,10)) and ~IsBlank(_F_REPORT.GetShare.Num_reg) then
+     _F_XML->Out_TAG('state_reg_num', _F_REPORT.GetShare.Num_reg);  //Государственный регистрационный номер, номер правил ДУ ПИФ
+  end; 
+  
+  if ~IsBlank(DATE_REG) then
+     _F_XML->Out_TAG('state_reg_date', _F_XML->Set_Date(DATE_REG));  //Дата государственной регистрации
+  end;
+  
+  if ~IsBlank(_f_report.GetShare.ISIN) then
+     _F_XML->Out_TAG('ISIN_identifier', _f_report.GetShare.ISIN);  //Код ISIN
+  end;
+  
+  SH_CODER:='НДЦ';
+  SH_CODE:=_F_REPORT->GetShareTicker(%Share, SH_CODER);
+  if IsBlank(SH_CODE) then
+     SH_CODER:='';
+  end;
+  if ~IsBlank(SH_CODE) or %IsCode then
+     _F_NXML2->Out_id_V02('proprietary_security_code', SH_CODE, SH_CODER, '', 0, %Way, InfoFrom);  //Частный идентификационный код ценной бумаги
+     Info:=_F_XML->Add_Info(Info, InfoFrom);
+  end;   
+  
+  if ~IsBlank(_f_report.GetShare.NAME) then
+     _F_XML->Out_TAG('description', _f_report.GetShare.NAME);  //Описание
+  end;
+  
+  if ~IsBlank(%COAF) then
+     _F_XML->Out_TAG('COAF', %COAF);  //Официальный референс корпоративного действия  (COAF)
+  end;
+  
+  if ~IsBlank(%security_evt_id) then
+     _F_XML->Out_TAG('security_evt_id', %security_evt_id);  //Референс корпоративного действия по ценной бумаге
+  end;
+  
+  //Референс связанного корпоративного действия  по ценной бумаге
+  if ~IsBlank(%security_evt_lnk_list) then
+     if IsList(%security_evt_lnk_list) then  //передан список
+        n:=ListCount(%security_evt_lnk_list); i:=0;
+        while i<=(n-1) do
+           s:=ListGet(%security_evt_lnk_list, 0);
+           Assign(s, ';', C, SecrEvtId);
+           _F_NXML2->Out_events_linkage_V02('security_evt_lnk_id', C, SecrEvtId, %Way, InfoFrom);
+           Info:=_F_XML->Add_Info(Info, InfoFrom);
+           Inc(i);
+        end;
+     else //передан один референс
+        Assign(%security_evt_lnk_list, ';', C, SecrEvtId);
+        _F_NXML2->Out_events_linkage_V02('security_evt_lnk_id', C, SecrEvtId, %Way, InfoFrom);
+        Info:=_F_XML->Add_Info(Info, InfoFrom);
+     end;
+  end;
+
+Out('</'+%Tag+'>');
+
+0;

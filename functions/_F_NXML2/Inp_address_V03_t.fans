@@ -1,0 +1,24 @@
+// Inp_address_V03_t(%ds:int; %Way:str; MAIL_ADR, PARTAD_COUNTRY, PARTAD_INDEX, PARTAD_ADDRESS, Info:str)
+// EKS 11.2020
+
+var W := '', Inf;
+Info  := '';
+PARTAD_COUNTY := PARTAD_INDEX := PARTAD_ADDRESS := '';
+if (%ds.?partad) then
+    W := _F_NXML2->Add_Way(%W, 'partad');
+    Inf := '';
+    _F_NXML2->Inp_address_partad_V02_t( %ds._partad, W, PARTAD_COUNTY, PARTAD_INDEX, PARTAD_ADDRESS, Inf );
+    if ~isBlank(Inf) then
+        Info := _F_XML->Add_Info(Info, Inf);
+    end;
+else
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Отсутствует обязательный тэг <partad>'));
+end;
+
+if (%ds.?plain) then
+    MAIL_ADR := %ds._plain;
+else
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Отсутствует обязательный тэг <plain>'));
+end;
+
+0

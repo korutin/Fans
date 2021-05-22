@@ -1,0 +1,71 @@
+//Inp_person_document_t(%ds:int; %Way:str; DOC_TYPE: int; pers_doc_type_code, narrative, doc_num, dtls_together, dtls_apart_ser, dtls_apart_num:str; doc_date: date, org, place, Info:str);
+// DOC_TYPE: int; 
+// pers_doc_type_code, 
+// narrative, 
+// doc_num, 
+// dtls_together, 
+// dtls_apart_ser, 
+// dtls_apart_num:str; 
+// doc_date: date, 
+// org, 
+// place, 
+// Info
+
+// EKS 11.2020
+var dop, W, x_person_doc_num, x_dtls_apart;
+
+Info := '';
+pers_doc_type_code:= narrative:= doc_num:= dtls_together:= dtls_apart_ser:= dtls_apart_num:= org:= place:= Info  := clear('');
+DOC_TYPE := clear(0);
+doc_date := clear(date('31.12.1899'));
+
+// ------------------------------------------------------------------
+if %ds.?person_document_type_code then
+    pers_doc_type_code := %ds._person_document_type_code;
+    DOC_TYPE := _F_NXML2->Get_DOC_TYPE_by_person_document_type_code(pers_doc_type_code, narrative);
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не удалось обнаружить обязательный элемент person_document_type_code'));
+end;    
+
+// ------------------------------------------------------------------
+if %ds.?person_doc_num then
+    x_person_doc_num := %ds._person_doc_num;
+    if (x_person_doc_num.?doc_num) then
+        doc_num := x_person_doc_num._doc_num;
+    elsif (x_person_doc_num.?dtls_together) then
+        dtls_together := x_person_doc_num._dtls_together;
+    elsif (x_person_doc_num.?dtls_apart) then
+        x_dtls_apart :=  x_person_doc_num.?dtls_apart;
+        W := _F_NXML2->Add_Way(%Way, 'dtls_apart');
+        if x_dtls_apart.?doc_num then
+            dtls_apart_num := x_dtls_apart._doc_num;
+        else
+            Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay( W, 'Не удалось обнаружить обязательный элемент doc_num'));
+        end;
+        if (x_dtls_apart.?doc_ser) then
+            dtls_apart_ser := x_dtls_apart._doc_ser;
+        else
+            Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay( W, 'Не удалось обнаружить обязательный элемент doc_ser'));
+        end
+    else
+        dummy
+    end
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не удалось обнаружить обязательный элемент person_doc_num'));
+end;    
+
+// ------------------------------------------------------------------
+if %ds.?doc_date then
+    doc_date := %ds._doc_date;
+end;    
+
+// ------------------------------------------------------------------
+if %ds.?org then
+    org := %ds._org;
+end;    
+
+// ------------------------------------------------------------------
+if %ds.?place then
+    place := %ds._place;
+end;    
+0

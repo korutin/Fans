@@ -1,0 +1,178 @@
+//Create_DISCLOSURE_REQUEST_xml(%doc_id:int, %FromFace:Int, %ToFace:Int, %To_id:Str, %To_id_type:Str, %To_narrative:Str, %To_name:Str, %T_DEPO, %reg_num:str, %reg_date:DateTime, %encoding:Str, %directory:Str, %OEMConvert, Mess:Str)
+//Запрос на сбор списка / информации о лицах
+//SEG
+
+var Version, xmlNAME, InfoFrom, MESS_FUNC, LNK_NUM, LNK_DATE, CA_REFERENCE, DOL, SHARE, SHARE_, ISSUER, REESTR, GROUND_CODE, NARRATIVE, GROUND_CODE_4, SUBORDINATE, L_SUBORDINAT,
+    INFO_TYPE, IS_BANKREQ, TEMPLATE, INFO_TYPE_NARRATIVE, R_DATE, RESPONSE_DATE, FACE, NDC, B_TYPE, B_DATE, B_NUM, B_NAME, INI_TYPE, INI_TYPE_NARR;
+    
+Mess:='';
+
+try
+  NDC:=Extract('Данные', "select F.SELF_ID from OD_FACES F where F.MNEM='НДЦ' and F.LAST_FLAG=1");
+  if IsBlank(NDC) then
+     Mess:="В справочнике субъектов не найдено лицо по мнемонике 'НДЦ'";
+  end;
+except
+  Mess:="В справочнике субъектов найдено несколько лиц по мнемонике 'НДЦ'";
+end;
+
+if ~IsBlank(Mess) then
+   raise(Mess);
+end;   
+
+Version:=_F_NXML2->Get_XSD_Version;
+xmlNAME:='DISCLOSURE_REQUEST';
+CA_REFERENCE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'CA_REFERENCE');  //Референс корпоративного действия
+MESS_FUNC:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'MESS_FUNC');  //Функция сообщения
+INFO_TYPE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'INFO_TYPE');  //Тип запрашиваемой информации
+IS_BANKREQ:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'IS_BANKREQ');  //Предоставлять б/реквизиты для лиц, осуществляющих права по ЦБ
+TEMPLATE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'TEMPLATE');  //Код шаблона типа раскрытия
+INFO_TYPE_NARRATIVE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'INFO_TYPE_NARRATIVE');  //Текстовое описание типа запрашиваемой информации
+R_DATE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'R_DATE');  //Дата, на окончание операционного дня, которой должны быть составлены данные
+RESPONSE_DATE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'RESPONSE_DATE');  //Дата, до которой необходимо предоставить Список / информацию о лицах отправителю запроса, включая эту дату
+ISSUER:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'ISSUER');  //Эмитент
+B_TYPE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'B_TYPE');  //Тип запроса
+B_DATE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'B_DATE');  //Дата запроса
+B_NUM:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'B_NUM');  //Номер запроса
+INI_TYPE:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'INI_TYPE');  //тип инициатора запроса
+INI_TYPE_NARR:=_F_BUX_OP->GET_OP_VAL(%doc_id, 'INI_TYPE_NARR');  //тип инициатора (вербально)
+REESTR:=Extract('Данные',
+                [select U.REESTR
+                 from OD_FACES F 
+                    left join OD_U_FACES U on U.FACE=F.ID
+                 where F.SELF_ID=:F and ((F.E_DATE>:D1 and F.B_DATE<=:D2) or (F.SELF_ID=F.ID and F.B_DATE>:D3) or (F.E_DATE<=:D4 and F.LAST_FLAG=1))],
+            ISSUER, %reg_date, %reg_date, %reg_date, %reg_date);
+
+SHARE:=-1;
+for 'Данные'
+select "select L.ID from OD_DOLS L where L.DOC=:DOC and L.FOOTER=2"
+from %doc_id
+into DOL do
+   SHARE_:=_F_BUX_OP->GET_OP_VAL_LINE(%doc_id, DOL, 'SHARE_2_ID');
+   if ~IsBlank(SHARE_) then
+      if ~IsBlank(SHARE) then
+         if SHARE=-1 then SHARE:=SHARE_;
+         elsif SHARE<>SHARE_ then SHARE:=Clear(0);
+         end;
+      end;   
+   end;   
+end;
+if ~IsBlank(SHARE) then
+   if SHARE=-1 then SHARE:=Clear(0); end;
+end;   
+
+self.FileName:=_F_XML->Get_File_Name(%directory, %reg_num, %reg_date);
+self.OEMConvert:=%OEMConvert;
+
+out('<?xml version="1.0" encoding="'+%encoding+'"?>');
+out('<'+xmlNAME+'>');
+
+_F_NXML2->Out_out_doc_v02(Version, %reg_num, %reg_date, %FromFace, %ToFace, %To_name, %To_id+';'+%To_id_type+';'+%To_narrative, '', '', '', '', '', '', '', InfoFrom);
+Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+
+_F_XML->Out_TAG('message_function', MESS_FUNC);  //Функция сообщения
+
+if ~IsBlank(B_TYPE) and ~IsBlank(B_NUM) and ~IsBlank(B_DATE) then
+   B_NAME:=Extract('Данные', "select NAME from OD_SYS_TABS where CODE='DEPO96_DCLA' and NUM=:N", B_TYPE);
+   _F_NXML2->Out_doc_link_V2('doc_link', B_NUM, B_DATE, 'OTHR', B_NAME, '', InfoFrom);
+   Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+end;
+//цикл по исходящим сообщениям, сформированным ранее
+for 'Данные'
+select [select D.NUM, D.D_DATE 
+        from OD_DOCS D 
+           left join OD_DOC_CATS DC on DC.ID=D.D_CAT
+           left join D_IN_MESS IM on IM.DOC=D.ID
+           left join OD_DOC_STATES T on T.ID=D.STATE and IM.MAIL_PARAM='DISCLOSURE_REQUEST'
+        where D.KVIT=:KVIT and DC.SYS_NAME='OUT_MESS' and T.SYS_NAME='FINAL']
+from %doc_id
+into LNK_NUM, LNK_DATE do
+   _F_NXML2->Out_doc_link_V2('doc_link', LNK_NUM, LNK_DATE, '', '', '', InfoFrom);
+   Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+end;
+
+_F_NXML2->Out_corporate_action_reference_V03('corporate_action_reference', CA_REFERENCE, 'DSCL', '', InfoFrom);  //Референс, тип корпоративного действия
+Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+
+_F_NXML2->Out_legal_entity_details_by_IssrSh('issuer', %reg_date, ISSUER, SHARE, '', InfoFrom);  //Идентификационные данные Эмитента/ПИФ/ИСУ/… (лица, обязанноого по ценным бумагам). Для паев ПИФ и ИСУ формируется два блока issuer.
+Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+
+if ~IsBlank(REESTR) then
+   _F_NXML2->Out_legal_entity_details_by_Face('registrar', %reg_date, REESTR, Clear(0), '', InfoFrom);  //Данные о регистраторе/головном депозитарии
+   Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+end;   
+
+_F_NXML2->Out_initiator_request_type('initiator_request', INI_TYPE, INI_TYPE_NARR, '', InfoFrom);
+Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+
+for 'Данные'
+select "select L.ID from OD_DOLS L where L.DOC=:DOC and L.FOOTER=3"
+from %doc_id
+into DOL do
+   GROUND_CODE:=_F_BUX_OP->GET_OP_VAL_LINE(%doc_id, DOL, 'GROUND_CODE');
+   NARRATIVE:=_F_BUX_OP->GET_OP_VAL_LINE(%doc_id, DOL, 'NARRATIVE');
+   
+   L_SUBORDINAT:=List();
+   for 'Данные'
+   select "select L.ID from OD_DOLS L where L.DOC=:DOC and L.FOOTER=4"
+   from %doc_id
+   into DOL do
+      GROUND_CODE_4:=_F_BUX_OP->GET_OP_VAL_LINE(%doc_id, DOL, 'GROUND_CODE_4');
+      SUBORDINATE:=_F_BUX_OP->GET_OP_VAL_LINE(%doc_id, DOL, 'SUBORDINATE');
+      if GROUND_CODE=GROUND_CODE_4 then
+         ListAdd(L_SUBORDINAT, SUBORDINATE);
+      end;
+   end;
+   
+   _F_NXML2->Out_laws_in_place('basis_of_request', GROUND_CODE, L_SUBORDINAT, NARRATIVE, '', InfoFrom);
+   Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+end;
+
+_F_NXML2->Out_information_type_V02('information_indicator', INFO_TYPE, iif(IS_BANKREQ,'Yes','No'), TEMPLATE, INFO_TYPE_NARRATIVE, '', InfoFrom);
+Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+
+if IsBlank(R_DATE) then
+   Mess:=_F_XML->Add_Info(Mess, 'Не указана Дата, на окончание операционного дня, которой должны быть составлены данные');
+else   
+   _F_NXML2->Out_date('record_date', R_DATE);  //Дата, на окончание операционного дня, которой должны быть составлены данные 
+end;   
+
+if IsBlank(RESPONSE_DATE) then
+   Mess:=_F_XML->Add_Info(Mess, 'Не указана Дата, до которой необходимо предоставить Список / информацию о лицах отправителю Запроса');
+else
+   _F_NXML2->Out_date('response_deadline', RESPONSE_DATE);  //Дата, до которой необходимо предоставить Список / информацию о лицах отправителю Запроса
+end;
+
+%T_DEPO.@FIRST;
+while ~%T_DEPO.@EOF do
+   
+   Out('<registered_shareholders>');
+   
+     _F_NXML2->Out_account_dtls_V04_by_Acc('account_dtls', %T_DEPO._Depo, '<registered_shareholders>', InfoFrom, FACE);  //Номер счета, по которому запрашивается информация
+     Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+      
+     _F_NXML2->Out_party_id_name_V03_by_Face('account_holder', %reg_date, FACE, NDC, '<registered_shareholders>', InfoFrom);  //Информация о зарегистрированном лице, по счету которого запрашивается информация
+     Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+     
+     _F_NXML2->Out_security_balance_v03_by_T('security_balance', %reg_date, CA_REFERENCE, %T_DEPO._T_SHARE, '<registered_shareholders>', InfoFrom);
+     Mess:=_F_XML->Add_Info(Mess, InfoFrom);
+      
+   Out('</registered_shareholders>');
+   
+   %T_DEPO.@NEXT;
+end;
+
+out('</'+xmlNAME+'>');
+
+if ~IsBlank(Mess) then
+   raise(Mess);
+end;
+
+self.@CLOSE;
+
+_F_NXML2->Get_XSD_Version;
+if ~_F_NXML2->XMLCheck(_F_NXML2.Get_XSD_Version.XSDName , self.FileName, '', Mess) then
+   raise(Mess);
+end;
+
+self.FileName;

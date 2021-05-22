@@ -1,0 +1,409 @@
+// Report_FReestrNotify( %DOC_ID: int; %DIR, %LABEL, %SUFX: str; %FromOrTo:int; %IsOutReg; %Fields: List; FileName: str)
+// Замена отчёту/действию F_REESTR_notify. Уведомление о выполнении операции в реестре (HTML)
+//
+// Приходят из вне
+// %DOC_ID
+// %DIR 
+// %IsOutReg
+// %SUFX
+// %FromOrTo     : int   (считается в уведомлении могут участвовать 2 лицевых счета (счет списания и счет зачисления). Если 0 , то отчет вызван для счета списания(DEPO), если 1 то для счета зачисления TO_DEPO)
+//10.12.2010 КМВ приведение в соответствие 08-17/пз-н : замена
+//"Полное наименование паевого инвестиционного фонда" на "Название паевого инвестиционного фонда"
+//01.09.2011 КМВ полное наименование регистратора и зарегистрированного юр. лица вместо краткого
+var content := '';
+var FTYPE,NUM, D_DATE, FROM_FACE:='', RATE, SUMMA, ADD_SUMMA, REJECT_COUSE,
+    SHARE_TO, SHARE_FROM, SHARE, NUMBER, DD_NUM, DD_DATE, WIR_DATE, END_DATE,
+    B_TYPE, B_NUM, B_DATE, AGENT, COMMENT, D_TYPE, CONTRAGENT, ZALOG, DOL,
+    DEPO_ACC, TO_DEPO_ACC, NOTIFY_DATE, DEPO, TO_DEPO, AMOUNT, AMOUNT_FROM, AMOUNT_TO;
+var CAT_NAME, CAT_SYS_NAME, S,
+    TABLE_HEADER := '<table width=100% cellpadding="2" cellspacing="0" border="0">',
+    TABLE_FOOTER := '</table><br><br><br>',
+    TABLE_SEPARATOR := '<tr><td colspan=2 style=border:none>&nbsp;</td></tr>',
+    M_ADR, FIO_CLI, I_MAIL_MOD, I_MAIL_ADR, DEPO_SELF, q, strout, bNumAndBDATE;
+var op, as_name_, val_;
+var RATE_STR, SUMMA_STR, _SUMMA_STR, ADD_SUMMA_STR, _SUMMA;
+
+function 'face_for_out(%FACE_STR :str; %pFULL, %pHOME_ADR: str)' //вывод информации о зарегистрированном лице
+do
+  // Было 
+  //[<tr><td align=right width=45%><b>]+ %FACE_STR+ [:</td><td>]+ _f_report.GetFace.FULL {_f_report.GetFace.NAME} +[</td></tr>
+  // <tr><td align=right><b> Адрес:</td><td>]+ iif(IsBlank(_f_report.GetFace.HOME_ADR), '&nbsp;', _f_report.GetFace.HOME_ADR) +[</td></tr>]   
+  // EKS 13.08.2019 ОСД видеть не хочет адрес в уведомлениях.
+  [<tr><td align=right width=45%><b>]+ %FACE_STR+ [:</td><td>]+ %pFULL {_f_report.GetFace.NAME} +[</td></tr>] +
+  iif(~(MyBase in List('USD')), 
+      [<tr><td align=right><b> Адрес:</td><td>]+ iif(IsBlank(%pHOME_ADR), '&nbsp;', %pHOME_ADR) +[</td></tr>],
+      '')
+end;
+
+function 'client_for_out(%client:int; %FACE:int; %F_DATE, %A_DATE:date; %NUMBER:str; %SUBTYPE_NAME; %TITLE_STR, %WHS_STR, %DEPO_ACC :str)' //вывод информации о лицевом счёте зарегистрированного лица
+do
+//KMV 10.08.2012 по требованию ЦСД со ссылкой на п.23.1 08/17/пз-н заменила слова "Тип счета" на "Вид счета"
+//EKS 13.08.2019 на дату %F_DATE берем данные о субъекте, на дату %A_DATE проверяем полномочия
+   _F_REPORT->CoOwners(%client, %F_DATE, %A_DATE);
+   _f_report->GetFace(%FACE, %F_DATE);   
+   FIO_CLI:=_f_report.GetFace.name;
+   TABLE_HEADER +
+     [<tr><td align=center colspan=2><b> ]+ %TITLE_STR +[ </td></tr>
+      <tr><td align=right width=45%><b> Номер счета]+ %WHS_STR+ iif(IsBlank(REJECT_COUSE),', по которому внесена запись','')+[:</td><td>]+ %NUMBER{_f_depo.GetClient.NUMBER}       +[</td></tr>
+      <tr><td align=right>          <b>   Вид счета]+ %WHS_STR+ iif(IsBlank(REJECT_COUSE),', по которому внесена запись','')+[:</td><td>]+ %SUBTYPE_NAME{_f_depo.GetClient.SUBTYPE_NAME} +[</td></tr>]
+      +iif(IsBlank(%DEPO_ACC),'', [<tr><td align=right><b>Счет клиента в депозитарии:</td><td>]+%DEPO_ACC+[</td></tr>])
+
+      + face_for_out( 'Зарегистрированное лицо'+ %WHS_STR+ iif(IsBlank(REJECT_COUSE), ', по лицевому счету которого внесена запись', ''), 
+                      iif(_F_REPORT.CoOwners.isDolev, 'Долевая собственность:','') + replace(_F_REPORT.CoOwners.faces, #13+#10, ' / '), 
+                      replace(_F_REPORT.CoOwners.adresses, #13+#10, ' / ')
+                      )
+
+   + TABLE_FOOTER
+end;
+
+function 'formatNumDate(%Num:str;%Date:date):str' do
+    if ~isBlank(%Num) or ~isBlank(%Date) then
+        if isBlank(%Num) then 
+            return('б/н от '+str(%Date))              
+        elsif (isBlank(%Date)) then
+            return('Номер ' + %Num)
+        else
+            return('Номер ' + %Num + ' от '+str(%Date))
+        end
+    else
+        return('')
+    end;
+end;
+
+SelectSQL( 'Данные', [select d.NUM, d.D_DATE, dc.NAME, dc.SYS_NAME from OD_DOCS d
+                      left join OD_DOC_CATS dc on dc.ID=d.D_CAT where d.ID=:D], %DOC_ID,
+    NUM, D_DATE, CAT_NAME, CAT_SYS_NAME, exit );
+for 'Данные' select[
+                      select F.AS_NAME, F.FTYPE
+                      from OD_DOCS D
+                           left join OP_FIELDS F on F.OP=D.D_CAT
+                      where D.ID= :DOC
+                   ]
+from %DOC_ID
+into as_name_, FTYPE do
+   eval('', 'try '+as_name_+':=ListVal(%Fields, as_name_) except 0 end');
+   
+   try 
+     if (FTYPE>=2) and (FTYPE<=5) then   //2=SmallInt, 3=Integer, 4=Word, 5=Boolean
+         Eval('',AS_NAME_+':='+iif(IsBlank(ListVal(%Fields, as_name_)),'Clear(0)', 'Int(ListVal(%Fields, as_name_))' ));
+     elsif (FTYPE=6)or(FTYPE=7)or(FTYPE=8)or(FTYPE=37)  then //6=Float  7=Currency   8=BCD  37=FMTBcd
+         Eval('',AS_NAME_+':='+iif(IsBlank(ListVal(%Fields, as_name_)),'Clear(0.0)', 'Float(ListVal(%Fields, as_name_))' ));
+     elsif (FTYPE=9) then //9=Date
+         Eval('',AS_NAME_+':='+iif(IsBlank(ListVal(%Fields, as_name_)),'Clear(Date(now))', 'Date(ListVal(%Fields, as_name_))' ));
+     elsif (FTYPE=10) then //10=Time
+         Eval('',AS_NAME_+':='+iif(IsBlank(ListVal(%Fields, as_name_)),'Clear(Time(now))', 'Time(ListVal(%Fields, as_name_))' ));
+     elsif (FTYPE=11)or(FTYPE=36) then //11=DateTime 36=TimeStamp
+         Eval('',AS_NAME_+':='+iif(IsBlank(ListVal(%Fields, as_name_)),'Clear(DateTime(now))', 'DateTime(ListVal(%Fields, as_name_))' ));
+     else
+         eval('',AS_NAME_+':=ListVal(%Fields, as_name_)');
+     end; 
+   except 
+       dummy 
+   end
+
+end;
+
+if ~isBlank(B_TYPE) then   // EKS 22.07.2020 оказалось, что не все карточки операций несут на себе поле B_TYPE (например Исправление ошибки)
+    B_TYPE := Extract('Данные', [select NAME from OD_SYS_TABS where CODE='DEPO96_DCLA' and NUM=:T], B_TYPE);
+else
+    B_TYPE := '';
+end;
+
+if IsNull(COMMENT) then COMMENT:='' end;
+
+if copy(%DIR, Length(%DIR), 1)<>'\' and copy(%DIR, Length(%DIR), 1)<>'/' then
+   if pos('\', %DIR) then %DIR := %DIR +'\' //для windows
+                    else %DIR := %DIR +'/' //для нормальных ОС
+   end
+end;
+
+// Непонятен замысел передавать лицевый счет через глобал _f_depo.ReportDirLabel.%DEPO ????????????  26.09.2020
+// Возможно это способ определить для какого счета вызвали уведомление (для счета с которого списываются, или для счета на который зачисляются паи)
+// !!!! Проконсультироваться с TVA, пока заменили на этот глобал на входной параметр %DEPO
+//_f_depo->GetClient(_f_depo.ReportDirLabel.%DEPO); //тут может быть как передающее лицо (DEPO), так и принимающее (TO_DEPO)
+
+Assert(%FromOrTo in List(0,1),'Не допустимое значение параметра %FromOrTo');
+if %FromOrTo = 0 then
+    _f_depo->GetClient(DEPO)
+else
+    _f_depo->GetClient(TO_DEPO)
+end;
+
+// self.FileName := %DIR+'Уведомление_'
+//    +_f_report->FilenameValidate(iif(IsNull(DEPO), '', _f_depo.GetClient.NUMBER +'_')+ NUM+itry(%SUFX,'')) //уведомление для обоих лиц будет с одним номером (NUM), но с разными исходящими номерами (OutNUM)
+//    +'.htm';
+FileName := %DIR+'Уведомление_'
+   +_f_report->FilenameValidate(iif(IsNull(DEPO), '', _f_depo.GetClient.NUMBER +'_')+ NUM+itry(%SUFX,'')) //уведомление для обоих лиц будет с одним номером (NUM), но с разными исходящими номерами (OutNUM)
+   +'.htm';
+
+_f_depo->GetClient(DEPO);
+DEPO_SELF:=_f_depo.GetClient.SELF_ID;
+_f_report->GetFace( MyFace, D_DATE );
+content := content +
+[
+   <html>
+       <head>
+       <meta http-equiv="Content-Type" content="text/html; charset=windows-1251">
+       <title>ОТЧЕТ</title>
+       </head>
+   <body>
+
+   <font face=Arial size=2pt>
+   <style type=text/css> td{font-size:9pt;border-bottom:solid silver 1.0pt} </style>
+
+   <table width=100% cellpadding="2" cellspacing="0" border="0">
+   <tr><td width=20%>]+
+         iif(IsBlank(%LABEL),'&nbsp;','<img src="'+ %LABEL +'" align=middle width=100pt height=100pt>')+
+      [</td>
+       <td widht=80%><b> Регистратор: ]+ _f_report.GetFace.FULL{_f_report->GetFace( MyFace, D_DATE )} +[</b><br>
+           ]+_f_depo->GetLicenceReestr( D_DATE )+[<br>
+           местонахождение: ]+_f_report.GetFace.HOME_ADR +[<br>
+           почтовый адрес: ]+_f_report.GetFace.MAIL_ADR+[<br>
+              ]+iif(IsBlank(_f_report.GetFace.PHONE),'','тел: ' +_f_report.GetFace.PHONE)
+               +iif(IsBlank(_f_report.GetFace.FAX  ),'',' факс: '+_f_report.GetFace.FAX  )+[</td>
+   </tr>
+   </table>
+   ]+
+   iif( %IsOutReg,
+   '<br><br><i>Исх. № '+_f_doc.Make_OutDocFiler.OutNUM+' Дата: ' + DateStr(_f_doc.Make_OutDocFiler.%D_DATE) + '</i><br><br>',
+   '<br><br><i>Исх. № __________ Дата: "__"___________ 20____г.</i><br><br>')
+   +[
+   <p align=center>
+      <font size=3><b> ]+'УВЕДОМЛЕНИЕ ОБ '+ iif(IsBlank(REJECT_COUSE), 'ОПЕРАЦИИ ПО ЛИЦЕВОМУ СЧЕТУ',
+                                                                       'ОТКАЗЕ В ПРОВЕДЕНИИ ОПЕРАЦИИ') +[
+                 <br> ]+ 'в реестре владельцев инвестиционных паев' +[</b></font>
+   </p>];
+
+if IsNull(SHARE) then SHARE:=0 end;
+_f_report->GetShare(SHARE);
+if SHARE=0
+   then _f_pif->GetFond( ISSUER, D_DATE )
+   else _f_pif->GetFond( _f_report.GetShare.IssuerID, D_DATE )
+end;
+
+S := CAT_NAME;  // Вид записи, внесенной по лицевому счету - это наименование операции с уточнениями
+if copy(CAT_SYS_NAME,length(CAT_SYS_NAME)-4,5)='OBREM' then
+   S := S + iif(D_TYPE=1, ' (Блокировка)', iif(D_TYPE=2, ' (Залог)', iif(D_TYPE=3, ' (Арест)', iif(D_TYPE=4, ' (Заклад)', ''))));
+elsif CAT_SYS_NAME='OP_R_ADM_CHANGE' then
+   for 'Данные' select [select ID from OD_DOLS where DOC=:D]
+   from %DOC_ID into DOL
+   do
+      if _F_BUX_OP->GET_OP_VAL_LINE(%DOC_ID, DOL, 'REQ')=26{Вид лицевого счета} then
+         S := S + '/изменение статуса (вида) лицевого счета';
+         exit
+      end;
+   end;
+elsif CAT_SYS_NAME='OP_R_COM_ZACH' then
+   S:='Выдача паев'    
+end;
+
+content := content +
+    TABLE_HEADER +
+     [<tr><td align=right width=45%><b>]+
+      if IsBlank(REJECT_COUSE) then
+                   [Вид записи, внесенной по лицевому счету:</td><td>]+ S +[</td></tr>
+         <tr><td align=right><b>
+                      Дата и время внесения записи в реестр:</td><td>]+ str(D_DATE) {str(date(D_DATE))} +[</td></tr>]
+      else
+                                                [Вид записи:</td><td>]+ CAT_NAME +[</td></tr>]
+      end +
+      if CAT_SYS_NAME='OP_R_INV_CONVERT' then
+          TABLE_SEPARATOR +
+         [<tr><td align=right><b>
+             Название паевого инвестиционного фонда отдаваемых паев:</td><td>]+
+                (_f_report->GetShare(SHARE_FROM); _f_pif->GetFond( _f_report.GetShare.IssuerID, D_DATE)) +[</td></tr>
+          <tr><td align=right><b>
+             под управлением:</td><td>]+ _f_xml->nbsp_str((_f_report->GetFace(_f_pif.GetFond.COMPANY, D_DATE); _f_report.GetFace.FULL)) +[</td></tr>
+          <tr><td align=right><b>
+              Количество инвестиционных паев, в отношении которых ]+
+                  iif(IsBlank(REJECT_COUSE),'','должна была быть ')+ [совершена расходная запись по лицевому счету:</td>
+                  <td>]+ _f_report->FloatAsAmount(AMOUNT_FROM) +[<br>(]+ AmountStr(AMOUNT_FROM, 7, 'пай','пая','паев','м/р') +[)</td></tr>]+
+          TABLE_SEPARATOR +
+         [<tr><td align=right><b>
+             Название паевого инвестиционного фонда принимаемых паев:</td><td>]+
+                (_f_report->GetShare(SHARE_TO); _f_pif->GetFond(_f_report.GetShare.IssuerID, D_DATE)) +[</td></tr>
+          <tr><td align=right><b>
+             под управлением:</td><td>]+ _f_xml->nbsp_str((_f_report->GetFace(_f_pif.GetFond.COMPANY, D_DATE); _f_report.GetFace.FULL)) +[</td></tr>
+          <tr><td align=right><b>
+              Количество инвестиционных паев, в отношении которых ]+
+                  iif(IsBlank(REJECT_COUSE),'','должна была быть ')+ [совершена приходная запись по лицевому счету:</td>
+                  <td>]+ _f_report->FloatAsAmount(AMOUNT_TO) +[<br>(]+ AmountStr(AMOUNT_TO, 7, 'пай','пая','паев','м/р') +[)</td></tr>]
+      else
+         if (CAT_SYS_NAME='OP_R_ADM_BLOCK') or (CAT_SYS_NAME='OP_R_ADM_UNBLOCK')
+             or (CAT_SYS_NAME='OP_R_ADM_CLOSE') or (CAT_SYS_NAME='OP_R_ADM_CHANGE') then
+            _f_pif->GetFond(_f_depo.GetClient.ISSUER, D_DATE)
+         elsif CAT_SYS_NAME='OP_R_ADM_OPEN' then
+            _f_pif->GetFond(ISSUER, D_DATE)
+         end;
+         _f_report->GetFace(_f_pif.GetFond.COMPANY, D_DATE);
+         [<tr><td align=right><b>
+             Название паевого инвестиционного фонда:</td><td>]+ _f_pif.GetFond.NAME +[</td></tr>
+          <tr><td align=right><b>
+                                    под управлением:</td><td>]+ _f_xml->nbsp_str(_f_report.GetFace.FULL) +[</td></tr>]
+      end
+   + TABLE_FOOTER;
+
+//client_for_out(%client:int; %FACE:int; %F_DATE:date; %NUMBER:str; %SUBTYPE_NAME; %TITLE_STR, %WHS_STR, %DEPO_ACC :str)
+_f_depo->GetClient( DEPO );
+DEPO_SELF:=_f_depo.GetClient.SELF_ID;
+if CAT_SYS_NAME='OP_R_INV_PEREVOD' then
+   content := content + client_for_out( DEPO, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME, 'Зарегистрированное лицо, передающее инвестиционные паи', '', DEPO_ACC);
+   _f_depo->GetClient( TO_DEPO );
+   content := content + client_for_out( TO_DEPO, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME, 'Зарегистрированное лицо, принимающее инвестиционные паи', '', TO_DEPO_ACC);
+elsif CAT_SYS_NAME='OP_R_INV_CONVERT' then
+   content := content + client_for_out( DEPO, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME, 'Лицевой счет, с которого списываются инвестиционные паи', '', '');
+   _f_depo->GetClient( TO_DEPO );
+   content := content + client_for_out( TO_DEPO, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME, 'Лицевой счет, на который зачисляются инвестиционные паи', '', '');
+else
+   content := content + client_for_out( DEPO, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME, '', '', DEPO_ACC);
+end;
+
+if copy(CAT_SYS_NAME,length(CAT_SYS_NAME)-4,5)='OBREM' then
+   if IsBlank(ZALOG) then
+      if not IsBlank(CONTRAGENT) then
+         _f_report->GetFace(CONTRAGENT, D_DATE); //выводим субъекта - контрагента   //на момент 01.07.2019 - не понятно почему используется D_DATE, а не F_DATE из GetClient
+         content := content + TABLE_HEADER +
+             face_for_out( iif(D_TYPE=1, 'Контрагент по блокировке',
+                           iif(D_TYPE=2, 'Залогодержатель',
+                           iif(D_TYPE=3, 'Контрагент по аресту',
+                           iif(D_TYPE=4, 'Залогодержатель',
+                                         'Контрагент')))), _f_report.GetFace.FULL, _f_report.GetFace.HOME_ADR) +
+             TABLE_FOOTER;
+      end
+   else
+      // 13.08.2019 счетов залогодержателя давно нет 
+      _f_depo->GetClient( ZALOG ); //выводим счет - контрагента
+      content := content + client_for_out( ZALOG, _f_depo.GetClient.FACE, _f_depo.GetClient.F_DATE, NOTIFY_DATE, _f_depo.GetClient.NUMBER, _f_depo.GetClient.SUBTYPE_NAME,
+                          iif(D_TYPE=1, 'Контрагент по блокировке',
+                          iif(D_TYPE=2, 'Залогодержатель',
+                          iif(D_TYPE=3, 'Контрагент по аресту',
+                          iif(D_TYPE=4, 'Залогодержатель',
+                                        'Контрагент')))),
+            iif((D_TYPE=2)or(D_TYPE=4), ' залогодержателя', ' контрагента'), '');
+   end
+end;
+
+RATE_STR:= SUMMA_STR:= _SUMMA_STR:= ADD_SUMMA_STR:= '&nbsp;';
+if ~IsBlank(RATE) then RATE_STR:= _f_report->FloatAsPrice(float(RATE)) +' руб.' end;
+if ~IsBlank(SUMMA) then
+   SUMMA_STR:= format('%0.2n', float(SUMMA)) +' руб.';
+   if IsBlank(ADD_SUMMA) then
+      _SUMMA_STR:= SUMMA_STR;
+      _SUMMA := float(SUMMA);
+   else
+      _SUMMA_STR:= format('%0.2n', float(SUMMA)-float(ADD_SUMMA)) +' руб.';
+      _SUMMA := float(SUMMA)-float(ADD_SUMMA);
+   end
+end;
+if ~IsBlank(ADD_SUMMA) then ADD_SUMMA_STR:= format('%0.2n', float(ADD_SUMMA)) +' руб.' end;
+content := content + TABLE_HEADER;
+   if not IsNull(AMOUNT) then
+      if not IsNull(AMOUNT_TO) then
+         content := content + [<tr><td align=right width=45%><b>
+                  Количество инвестиционных паев, в отношении которых ]+
+                     iif(IsBlank(REJECT_COUSE),'','должна была быть ')+ [совершена расходная запись по лицевому счету:</td>
+                     <td>]+ _f_report->FloatAsAmount(AMOUNT) +[<br>(]+ AmountStr(AMOUNT, 7, 'пай','пая','паев','м/р') +[)</td></tr>];
+         content := content + [<tr><td align=right width=45%><b>
+                  Количество инвестиционных паев, в отношении которых ]+
+                     iif(IsBlank(REJECT_COUSE),'','должна была быть ')+ [совершена приходная запись по лицевому счету:</td>
+                     <td>]+ _f_report->FloatAsAmount(AMOUNT_TO) +[<br>(]+ AmountStr(AMOUNT_TO, 7, 'пай','пая','паев','м/р') +[)</td></tr>];
+      else
+         content := content + [<tr><td align=right width=45%><b>
+                  Количество инвестиционных паев, в отношении которых ]+
+                     iif(IsBlank(REJECT_COUSE),'','должна была быть ')+ [совершена запись по лицевому счету:</td>
+                     <td>]+ _f_report->FloatAsAmount(AMOUNT) +[<br>(]+ AmountStr(AMOUNT, 7, 'пай','пая','паев','м/р') +[)</td></tr>];
+      end
+   end;
+   if (CAT_SYS_NAME='OP_R_INV_ZACH' or CAT_SYS_NAME='OP_R_COM_ZACH') then
+      content := content + [<tr><td align=right width=45%><b>
+                                                   Стоимость пая:</td><td>]+ RATE_STR +[</td></tr>
+           <tr><td align=right><b>
+                                              Общая сумма оплаты:</td><td>]+ SUMMA_STR +'<br>' + iif(isBlank(SUMMA),'','('+ CurrencyStr(float(SUMMA)*100, 'RUB') +')') + [</td></tr>
+           <tr><td align=right><b>
+                                 Общая сумма оплаты без надбавки:</td><td>]+ _SUMMA_STR +[</td></tr>
+           <tr><td align=right><b>
+                                                  Сумма надбавки:</td><td>]+ ADD_SUMMA_STR +[</td></tr>];
+   elsif CAT_SYS_NAME='OP_R_INV_SPIS' then
+      content := content + [<tr><td align=right width=45%><b>
+                                                   Стоимость пая:</td><td>]+ RATE_STR +[</td></tr>
+           <tr><td align=right><b>
+                                        Стоимость погашенных паев:</td><td>]+ SUMMA_STR +[</td></tr>
+           <tr><td align=right><b>
+                                       Сумма оплаты (со скидкой):</td><td>]+ _SUMMA_STR + '<br>' + iif(isBlank(_SUMMA),'','('+ CurrencyStr(_SUMMA*100, 'RUB') +')')+[</td></tr>
+           <tr><td align=right><b>
+                                                    Сумма скидки:</td><td>]+ ADD_SUMMA_STR +[</td></tr>];
+   end;
+   content := content + [<tr><td align=right width=45%><b>]+
+            'Реквизиты документа'+ iif(IsBlank(REJECT_COUSE),', на основании которого внесена запись','')+[:</td>];
+   if _f_doc->Get_APP_OPTION('BASE_MODE')=2 then // Использовать документы из Журнала регистрации входящих документов, сквитованные с операцией
+      S := _f_doc->Get_InDocFilers(%DOC_ID);
+      if not IsBlank(S) then
+         content := content + [<td>]+ S +[</td></tr>]
+      end
+   end;
+   if IsBlank(S) or _f_doc->Get_APP_OPTION('BASE_MODE')<>2 then // Использовать основание из карточки операции
+      bNumAndBDATE := formatNumDate(B_NUM, B_DATE);
+      //content := content + [<td>]+ B_TYPE +'; Номер '+ B_NUM +' от '+ str(B_DATE) +iif(IsBlank(REJECT_COUSE),'<br>'+ COMMENT,'') +[</td></tr>];
+      content := content + [<td>]+ iif(~isBlank(bNumAndBDATE), iif(isBlank(B_TYPE), '',B_TYPE +'; ') + bNumAndBDATE, iif(IsBlank(REJECT_COUSE), COMMENT,'')) +[</td></tr>];
+      if (CAT_SYS_NAME='OP_R_ADM_OPEN') and (_f_depo.GetClient.SUBTYPE=3) then
+         strout:=[<tr><td align=right width=45%><b>Учредители управления:</td><td>];
+         for 'Данные' select [
+             select U.FULL_NAME, f_DocNumDate(af.A_NUM,af.A_DATE) as DDU
+             from OD_AFFILS af
+             left join OD_U_FACES u on U.FACE=af.FACE
+             where af.RELATION=14 and af.CLIENT=:ID]
+         from DEPO_SELF
+         using q do
+            strout := strout + q._FULL_NAME+'&nbsp Договор доверительного управления №' + q._DDU +'<br>';
+         end; //for
+         strout := strout + [</td></tr>];
+         content := content + strout;
+      end;
+   end;
+   content := content + TABLE_FOOTER;
+
+if not IsBlank(REJECT_COUSE) then
+   content := content + TABLE_HEADER;
+   if REJECT_COUSE<>100 then
+      S := Extract('Данные', [select NAME from OD_SYS_TABS where CODE='REESTR_REJECT_COUSE' and NUM=:N], REJECT_COUSE);
+      content := content + [<tr><td align=right><b> Причина отказа:</td><td>]+ S +[</td></tr>];
+   end;
+   if not IsBlank(COMMENT) then
+      content := content + [<tr><td align=right><b> Комментарии:</td><td>]+ COMMENT +[</td></tr>]
+   end;
+   content := content + TABLE_FOOTER;
+end;
+
+//out('<br><br>'+ _f_report->GetReporterDol+' ____________________ / '+_f_report->FIOwithInitial(_f_report.GetReporterDol.Reporter)
+content := content + '<br><br>Уполномоченное лицо регистратора      ___________________________________  '
+   +' <br><br>М.П.';
+
+for 'Данные' select [select I_MAIL_MOD, I_MAIL_ADR
+                     from OD_CLIENTS_REC
+                     where CLIENT=:ID and B_DATE<=:D_DATE and E_DATE>:D_DATE]
+             from DEPO_SELF, D_DATE, D_DATE
+             into I_MAIL_MOD, I_MAIL_ADR do
+   exit;
+end;
+//КУДА КОМУ
+if I_MAIL_MOD=1 or I_MAIL_MOD=2 then
+    content := content + [<br><br>
+         <table width="100%" border="0">
+          <tr>
+           <td style=border:none width="70%" align="right" valign="top">КУДА:</td>
+           <td style=border:none align="left">]+iif(IsBlank(I_MAIL_ADR),'&nbsp',I_MAIL_ADR)+[
+           </td>
+          </tr>
+          <tr>
+           <td style=border:none width="70%" align="right" valign="top">КОМУ:</td>
+           <td style=border:none align="left">]+iif(IsBlank(FIO_CLI),'&nbsp',FIO_CLI)+[
+           </td>
+          </tr>
+         </table>];
+end;
+
+//ExecSQL('Данные', 'update OD_DOCS set ID=0, IMAGEFILE=:F where ID=:ID', self.FileName, %DOC_ID);
+if copy(ActiveForm,1,12) = '_D_OPERATION' then
+   D_OPERATION.@REFRESH
+end;
+content;

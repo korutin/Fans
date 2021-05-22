@@ -1,0 +1,47 @@
+//Inp_header_t(%ds:int; %Way:str; doc_num:str;doc_date; from, to: int; Info:str)
+// -----------------------------------------------------------------------------
+// EKS 11.2020
+
+var W, TO_Codes, TO_name, TO_FACE, FROM_Codes, FROM_name, FROM_FACE, 
+    x_doc_date,
+    ErrList;
+Info       := '';
+ErrList    := '';
+doc_num    := clear('');
+doc_date   := clear(datetime('31.12.1899'));
+TO_Codes   := List();
+FROM_Codes := List();
+
+if (%ds.?doc_num) then
+    doc_num := ds._doc_num;
+else
+    W    := _F_NXML2->Add_Way(%Way, 'doc_num');
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Отсутсвует обязательный элемент содержащий Номер документа по системе учета отправителя'));
+end;
+
+if (%ds.?doc_date) then
+    x_doc_date := %ds._doc_date;
+    _F_NXML2->Inp_Date_or_DateTime_t(x_doc_date, doc_date);
+else
+    W    := _F_NXML2->Add_Way(%Way, 'doc_date');
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Отсутсвует обязательный элемент содержащий Дату документа по системе учета отправителя'));
+end;
+
+if (%ds.?from) then
+    W    := _F_NXML2->Add_Way(%Way, 'from');
+    _F_NXML2->Inp_party_identification2_V02_with_FACE(%ds.?from, 'from', FROM_Codes, FROM_name, FROM_FACE, ErrList);   
+else
+    W    := _F_NXML2->Add_Way(%Way, 'from');
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Отсутсвует обязательный элемент содержащий Отправителя сообщения'));
+end;
+
+if (%ds.?to) then
+    W    := _F_NXML2->Add_Way(%Way, 'to');
+    _F_NXML2->Inp_party_identification2_V02_with_FACE(%ds.?to, 'to', TO_Codes, TO_name, TO_FACE, ErrList);
+else
+    W    := _F_NXML2->Add_Way(%Way, 'to');
+    Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(W, 'Отсутсвует обязательный элемент содержащий Получателя сообщения'));
+end;
+
+
+0

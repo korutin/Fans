@@ -1,0 +1,104 @@
+//Gen_DisclosureReq5_R(%DOC:Int)
+//Заполнение 5-го и 6-го подвалов (Список лиц для трансляции, Список лиц для трансляции II) запроса на сбор списка
+//SEG
+
+var NUM, OP, DEPO_2, CHAIN_L2, SHARE_ID, DEPO_AMOUNT, DEPO_ZALOG, DEPO_BLOCK, T, DOL, FACE, N, NAME, STATE_SYS, Mess, OGRN, CODE;
+
+T:=Table(DEPO Int, SHARE Int, FACE Int, ID str, ID_TYPE str, ID_NARR str, NAME Str, DEPO_AMOUNT float, DEPO_ZALOG float, DEPO_BLOCK float);
+
+Mess:='';
+//цикл по операциям формирования информации о владельцах
+for 'Данные'
+select [select D.NUM, D.ID, S.SYS_NAME
+        from OD_DOC_CATS DC
+          left join OD_DOCS D on D.D_CAT=DC.ID and D.KVIT=:DOC
+          left join OD_DOC_STATES S on S.ID=D.STATE
+        where DC.SYS_NAME='OP_INF_REESTR']
+from %DOC
+into NUM, OP, STATE_SYS do
+   if (STATE_SYS='FINAL') or (STATE_SYS='WAIT_R_FOR_OPEN_AVTO') then
+      //цикл по 2-му подвалу операции по счетам, по которым требуется расшифровка и еще не раскрыты
+      for 'Данные'
+      select [select R2.DEPO_2, /*R2.CHAIN_L2,*/ C.FACE, F.NAME, FU.OGRN, FC.CODE
+              from OD_DOLS L
+                
+                
+                
+                left join U_OP_INF_REESTR_DOL2 R2 on R2.DOL=L.ID
+                left join OD_CLIENTS C on C.ID=R2.DEPO_2
+                left join OD_U_FACES FU on FU.FACE=C.FACE
+                left join OD_FACE_CODERS FC on FC.FACE=C.FACE and FC.CODER=:C
+                left join OD_FACES F on F.SELF_ID=C.FACE and F.LAST_FLAG=1
+              where L.DOC=:DOC and L.FOOTER=2 and R2.MUST_OPEN=1 and R2.IS_OPENED<>1 and R2.DEPO_2 is not null /*and R2.CHAIN_L2 is not null*/]
+      from _F_NXML2.NDC_ID, OP
+      into DEPO_2, /*CHAIN_L2,*/ FACE, NAME, OGRN, CODE do   
+         //цикл по 1-му подвалу операции, чтобы по раскрываемым счетам 2-го подвала вытащить бумаги с количествами
+         for 'Данные'
+         select [select R1.SHARE_ID, R1.DEPO_AMOUNT, R1.DEPO_ZALOG, R1.DEPO_BLOCK
+                 from OD_DOLS L
+                   left join U_OP_INF_REESTR_DOL R1 on R1.DOL=L.ID
+                 where L.DOC=:DOC and L.FOOTER=1 and R1.DEPO=:DEPO and /*R1.CHAIN_L=:CHAIN_L and*/ R1.SHARE_ID is not null]
+         from OP, DEPO_2 /*, CHAIN_L2*/
+         into SHARE_ID, DEPO_AMOUNT, DEPO_ZALOG, DEPO_BLOCK do
+            if TableFind(T, List('DEPO='+Str(DEPO_2), 'SHARE='+Str(SHARE_ID))) then
+               T.@EDIT;
+               T._DEPO_AMOUNT:=T._DEPO_AMOUNT+DEPO_AMOUNT;
+               T._DEPO_ZALOG:=T._DEPO_ZALOG+DEPO_ZALOG;
+               T._DEPO_BLOCK:=T._DEPO_BLOCK+DEPO_BLOCK;
+               T.@POST;
+            else
+               T.@APPEND;
+               T._DEPO:=DEPO_2;
+               T._SHARE:=SHARE_ID;
+               T._FACE:=FACE;
+               if ~IsBlank(OGRN) then
+                  T._ID:=OGRN;
+                  T._ID_TYPE:='OGRN';
+               elsif ~IsBlank(CODE) then
+                  T._ID:=CODE;
+                  T._ID_TYPE:='OTHR';   
+                  T._ID_NARR:='NSDR';   
+               end;
+               T._NAME:=NAME;
+               T._DEPO_AMOUNT:=DEPO_AMOUNT;
+               T._DEPO_ZALOG:=DEPO_ZALOG;
+               T._DEPO_BLOCK:=DEPO_BLOCK;
+               T.@POST;
+            end;
+         end;
+      end;
+   else   
+      Mess:=Mess+NUM+#13+#10;
+   end;   
+end;
+
+if ~IsBlank(Mess) then
+   raise('Следующие операции находятся в состоянии, не ожидающие раскрытия'+#13+#10+Mess);
+end;
+
+ExecSQL('Данные', 'delete from OD_DOLS where DOC=:DOC and FOOTER=5', %DOC);
+
+N:=0;
+T.@FIRST;
+while ~T.@EOF do
+  DOL:=_F_BUX_OP->CREATE_OP_LINE_FULL(%DOC, Inc(N), 5);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'NAME_5', T._NAME);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'FACE_5', T._FACE);
+  if ~IsBlank(T._ID) then
+     _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'ID_5', T._ID);
+  end;
+  if ~IsBlank(T._ID_TYPE) then
+     _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'ID_TYPE_5', T._ID_TYPE);
+  end;
+  if ~IsBlank(T._ID_NARR) then
+     _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'ID_TYPE_NARR_5', T._ID_NARR);
+  end;
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'SHARE_5_ID', T._SHARE);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'DEPO_5', T._DEPO);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'DEPO_AMOUNT_5', T._DEPO_AMOUNT);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'DEPO_ZALOG_5', T._DEPO_ZALOG);
+  _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC, DOL, 'DEPO_BLOCK_5', T._DEPO_BLOCK);
+  T.@NEXT;
+end;  
+
+0;

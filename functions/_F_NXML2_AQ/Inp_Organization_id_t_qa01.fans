@@ -1,0 +1,170 @@
+// Inp_Organization_id_t_qa01(%tt: int):int
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Inp_Organization_id_t
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+
+uses _QA;
+
+var onShap, err_c, Dt1, Dt2, tStart, result, tEnd, ErrList, Info, s;
+var legal_entity_id, organization_id, org_doc_num_OGRN, org_doc_num_STIC, dtls_apart_STIC, organization_info;
+var logK;
+var QA_CODE := 'Inp_Organization_id_t_qa01', JUR_ID, JUR_ID_et, PHNT_ID1;
+
+// $meta begin
+var __tFace_GOAL := Table( B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str,
+                               EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int,
+                               DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str,
+                               PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int,
+                               CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str,
+                               OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str,
+                               __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str),
+                               __tCode_CODES Table(CODER int, CODE str, FACE int), 
+                               __tOMETA Table(ID int, STAMP datetime, CLASS str)),
+    __tFace_PHNT1:= Table( B_DATE date, E_DATE date, NAME str, INN str, S_TYPE int, MAIL_ADR str, HOME_ADR str, FACT_ADR str, MAIL_KLADR str, HOME_KLADR str, FACT_KLADR str, MNEM str,
+                               EMAIL str, FAX str, TELEX str, KPP str, PHONE str, STATE int, DATE_BIRTH date, DATE_DEPTH date, REGN int, BRANCHES int, IS_NERES int,
+                               DOC_TYPE int, DOC_DAT date, DOC_END date, DOC_CODE str, DOC_SER str, DOC_NUM str, DOC_PLACE str, IMAGEFILE str, ENG_NAME str, ENG_MAIL_ADR str, SEX str,
+                               PHONE_WORK str, PENSNUM str, BIRTHPLACE str, PUBMODE int, FULL_NAME str, ENG_FULL_NAME str, OKPO str, OKONX str, OPF str, FS int, DEPOT int, REESTR int,
+                               CAPITAL float, EXEC_ORGAN int, NAL_ORGAN int, OGRN_DATE date, OGRN_PLACE str, OGRN str, OKOGU str, OKATO str, DOL_1 str, DOL_2 str, FIO_1 str, FIO_2 str, TEL_1 str, TEL_2 str, OSN_1 str,
+                               OSN_2 str, TEL_OTV str, TEL_BUG str, DOL_OTV str, FIO_OTV str, FIO_BUG str,
+                               __tDModes_DIAL_MODES Table(NUM_LIC str, BEG_LIC date, END_LIC date, MODE int, PLACE_LIC str),
+                               __tCode_CODES Table(CODER int, CODE str, FACE int), 
+                               __tOMETA Table(ID int, STAMP datetime, CLASS str)),
+    DOCS := Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str );
+
+// $meta end
+
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+TableClear(%tt);
+result   := _QA.PASSED;
+tStart   := now;
+Dt1      := date('01.09.2018');
+Dt2      := date('01.02.2011');
+
+try
+    JUR_ID_et := _QA->InsFaceByAlias_t('JurRusBrokOpen_HistDpt2', Dt1, __tFace_GOAL);
+    PHNT_ID1   := _QA->InsFaceByAlias_t('JurRusLukoilA-03', Dt2, __tFace_PHNT1);
+    // Конструируем элемент типа organization_id_t
+    dtls_apart_STIC   := Table( doc_ser str, doc_num str);
+    org_doc_num_OGRN  := Table( doc_num str, dtls_together str, dtls_apart int);
+    org_doc_num_STIC  := Table( doc_num str, dtls_together str, dtls_apart int);
+    organization_id   := Table( organization_code_type str, narrative str, org_doc_num int, doc_date date, reg_org str);
+    organization_info := Table( organization_id int, legal_entity_indicator str, country_of_incorporation str, date_of_incorporation date, short_name str);
+    dtls_apart_STIC.@APPEND;
+    dtls_apart_STIC._doc_ser := __tFace_GOAL._DOC_SER;
+    dtls_apart_STIC._doc_num := __tFace_GOAL._DOC_NUM;
+    dtls_apart_STIC.@POST;
+    org_doc_num_OGRN.@APPEND;
+    org_doc_num_OGRN._doc_num       := __tFace_GOAL._OGRN;
+    org_doc_num_OGRN._dtls_together := null;
+    org_doc_num_OGRN._dtls_apart := null;
+    org_doc_num_OGRN.@POST;
+    org_doc_num_STIC.@APPEND;
+    org_doc_num_STIC._doc_num       := null;
+    org_doc_num_STIC._dtls_together := null;
+    org_doc_num_STIC._dtls_apart    := dtls_apart_STIC;
+    org_doc_num_STIC.@POST;
+    
+    organization_id.@APPEND;
+    organization_id._organization_code_type := 'OGRN';
+    organization_id._narrative              := '';
+    organization_id._org_doc_num            := org_doc_num_OGRN;
+    organization_id._doc_date               := __tFace_GOAL._OGRN_DATE;
+    organization_id._reg_org                := __tFace_GOAL._OGRN_PLACE;
+    organization_id.@POST;
+    organization_id.@APPEND;
+    organization_id._organization_code_type := 'STIC';
+    organization_id._narrative              := '';
+    organization_id._org_doc_num            := org_doc_num_STIC;
+    organization_id._doc_date               := __tFace_GOAL._DOC_DAT;
+    organization_id._reg_org                := __tFace_GOAL._DOC_PLACE;
+    organization_id.@POST;
+    
+    organization_info.@APPEND;
+    organization_info._organization_id          := organization_id;
+    organization_info._legal_entity_indicator   := 'Yes';
+    organization_info._country_of_incorporation := null;
+    organization_info._date_of_incorporation    := null;
+    organization_info._short_name               := __tFace_GOAL._name;
+    organization_info.@POST;
+    dummy
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;
+end;
+
+// --------------------------------------------------------------------------------
+// ------  Выполнение тестового сценария и проверка результата
+if (result <> _QA.CANCELED) then
+    try
+        // Тестируемая функция
+        JUR_ID := clear(0);
+        Info    := '';
+        _F_NXML2->Inp_organization_id_t(organization_info, DOCS, JUR_ID, Info);
+        err_c  := 0;
+        _QA.eq_ii.L := ''; 
+        err_c  := err_c + _QA->eq_ii(JUR_ID, JUR_ID_et, 'Inp_organization_id_t.DOC_FACE', 'JUR_ID_et', s);ListAdd(LOGK, s);
+        if err_c>0 then
+            result := _QA.FAIL;
+            onShap := 1;
+            ListAdd(LOGK, '    -----------------Диагностика-----------------');
+            ListAdd(LOGK, '    Inp_organization_id_t.Info=['+Info+']');
+            _QA.ShowTable.shapka := 1;
+            ListAdd(LOGK, '    Inp_organization_id_t.DOCS=['+#13+#10+_QA->ShowTable(DOCS, List('code_type', 'doc_num', 'doc_date', 'reg_org', 'param_type', 'narrative'), #9, onShap)+#13+#10+']');
+            //ListAdd(LOGK, '    Идентифицируемое лицо:'+#13+#10+_QA->repr(__tFace_GOAL));
+        else 
+            result := _QA.PASSED;
+        end;
+        result := iif(err_c>0, _QA.FAIL, _QA.PASSED);
+    except
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением. Exception [' + Exception.text + ']');
+        result := _QA.BROKEN;
+    end;
+end;
+
+// -------------------------------------- Post-condition : Удаляем окружение ----------------------------------------------
+if _F_NXML2_AQ.EnvDestroy = 1 then    
+    try
+        _QA->DelContext2(ErrList);
+    except
+        ErrList := ErrList + #13+#10+'Исключение во время удаление окружения.' + Exception.Text;
+    end;
+    if ~isBlank( ErrList ) then
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+    end;
+
+    // ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], EMI_UK);
+    // ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], EMI_UK);
+    if ~isNull(JUR_ID_et) then
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], JUR_ID_et );
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], JUR_ID_et );
+    end;
+    if ~isNull(PHNT_ID1) then
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], PHNT_ID1);
+        ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], PHNT_ID1 );    
+    end;
+end;
+
+// -------------------------------------- Оформляем результат --------------------------------------------------------------
+try
+    %tt.@APPEND;
+    %tt._scenario := QA_CODE;
+    %tt._result   := result;
+    %tt._log      := logK;
+    %tt._tStart   := tStart;
+    %tt._tEnd     := now;
+    %tt.@POST;
+except
+    raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+end;
+%tt._result;

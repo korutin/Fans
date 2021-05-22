@@ -1,0 +1,105 @@
+// Integra_33_setUp( %CrMoment:datetime; %Objects:int); 
+// В Objects заедут следующие объекты:
+//                   %__tFace_NRD, 
+//                   %__tFace_ISS, 
+//                   %__tShare_SHAREA, 
+//                   %__tShare_SHAREB, 
+//                   %__tFace_FBrok, 
+//                   %__tFace_SnBrok,
+//                   %__tClient_ND, %__tClient_PLACE, %__tClient_PLACE2: int; 
+//                   HOLDERS, NRD_ID, SHAREETF_ID, CliNOM_ID, PLACE_ID:int; LOGK:List);
+// --------------------------------------------------------------------------------------
+// Создание 33-го окружения. Окружение для повторения ошибок Инфинитума. Данное окружение будет расширятся по мере поступления новых ошибок.
+// 33-окружение для тестирования распаковки XML запроса депозитарием Инфинитума
+ 
+uses _TYPES;
+var Link, k, x_ISS, 
+    DOC_json, DOC_json2, DOC_json3, DOC_json4, DOC_json5, 
+    ZACH_DOC_ID1, ZACH_DOC_ID2, ZACH_DOC_ID3, ZACH_DOC_ID4, ZACH_DOC_ID5, z, x_bankProp, xx_bankProp, x_meta,
+    AMOUNT_A, AMOUNT_B, AMOUNT_C, AMOUNT_D, AMOUNT_E,
+    HOLDERS, NRD_ID, SHAREETF_ID, OW1_ID, OW2_ID, OW3_ID, OW4_ID, OW5_ID, CliOW1_ID, CliOW2_ID, CliOW3_ID, CliOW4_ID, CliOW5_ID, PLACE_ID, PLACE_ID2, PL_HOLDER_ID;
+var ISS_ID, UK_ID;
+var QA_CODE := 'Integra_32', F_ID, SELF_ID;
+var LBR, RBR, LSQ, RSQ;
+// $meta begin
+var __tFace_ISS      := _TYPES->tFace; OwnerSet(__tFace_ISS,     self.Caller.self );
+var __tFace_FBrok    := _TYPES->tFace; OwnerSet(__tFace_FBrok,   self.Caller.self );
+var __tFace_SnBrok   := _TYPES->tFace; OwnerSet(__tFace_SnBrok,  self.Caller.self );
+var __tClient_OW1    := _TYPES->tClient;  OwnerSet( __tClient_OW1,  self.Caller.self );
+var __tClient_OW2    := _TYPES->tClient;  OwnerSet( __tClient_OW2,  self.Caller.self );
+var __tClient_OW3    := _TYPES->tClient;  OwnerSet( __tClient_OW3,  self.Caller.self );
+var __tClient_OW4    := _TYPES->tClient;  OwnerSet( __tClient_OW4,  self.Caller.self );
+var __tClient_OW5    := _TYPES->tClient;  OwnerSet( __tClient_OW5,  self.Caller.self );
+var __tClient_DU     := _TYPES->tClient;  OwnerSet( __tClient_DU,  self.Caller.self );
+var __tFace_OW1      := _TYPES->tFace;    OwnerSet( __tFace_OW1,  self.Caller.self );
+var __tFace_OW2      := _TYPES->tFace;    OwnerSet( __tFace_OW2,  self.Caller.self );
+var __tFace_OW3      := _TYPES->tFace;    OwnerSet( __tFace_OW3,  self.Caller.self );
+var __tFace_OW4      := _TYPES->tFace;    OwnerSet( __tFace_OW4,  self.Caller.self );
+var __tFace_OW5      := _TYPES->tFace;    OwnerSet( __tFace_OW5,  self.Caller.self );
+var __tFace_DU       := _TYPES->tFace;    OwnerSet( __tFace_DU,  self.Caller.self );
+var __tFace_PL_HOLDER:= _TYPES->tFace;    OwnerSet( __tFace_PL_HOLDER,  self.Caller.self );
+var __tFace_ProfileUK:= _TYPES->tFace;    OwnerSet( __tFace_ProfileUK,  self.Caller.self );
+var __tClient_PLACE  := _TYPES->tClient;  OwnerSet( __tClient_PLACE,  self.Caller.self );
+var __tClient_PLACE2 := _TYPES->tClient;  OwnerSet( __tClient_PLACE2, self.Caller.self );
+var __tShare_ETF     := _TYPES->tShare;   OwnerSet( __tShare_ETF, self.Caller.self );
+var __tBankProp_item := _TYPES->tBankProp; OwnerSet(__tBankProp_item, self.Caller.self );
+
+// $meta end
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+LOGK := List();
+LBR  := '{'; RBR := '}'; LSQ := '['; RSQ := ']';
+try
+    AMOUNT_A := 100; 
+    AMOUNT_B := 600; 
+    AMOUNT_C := 1200;
+    AMOUNT_D := 30; 
+    AMOUNT_E := 90;
+    try
+        NRD_ID := Extract('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+        if IsBlank(NRD_ID) then
+           raise("Не найден субъект по мнемонике 'НДЦ'");
+        end; 
+    except
+        raise("Найдено несколько субъектов по мнемонике 'НДЦ'");
+    end;
+    
+    UK_ID        := _QA->InsOrLoadFaceByAlias_t( 'JurRusUK_RegPortInv',  %CrMoment, __tFace_ProfileUK );
+    PL_HOLDER_ID := _QA->InsOrLoadFaceByAlias_t( 'JurRusSpecDepInfinitum',  %CrMoment, __tFace_PL_HOLDER );
+    SHAREETF_ID  := _QA->InsETFByAlias_t('RusCloseProp_ETF02', %CrMoment, __tFace_ISS, __tShare_ETF, __tFace_ProfileUK, __tFace_PL_HOLDER, UK_ID, PL_HOLDER_ID);
+    
+    // --------------------------------------------------------------------------
+    //PLACE_ID  := _QA->InsDepoActByAlias_t( 'TL3332240009', %CrMoment, NRD_ID, clear(0), __tClient_PLACE);
+    _QA->Produce_RandomDepo_t(__tClient_PLACE, List('NUMBER=*', 'SUBTYPE=1', 'TYPE_=1', 'LINK_NUMBER=HL121213037A', 'DD_NUM=ДЕПО/'+str(_QA->random(10000))));    
+    __tClient_PLACE.@EDIT;
+    __tClient_PLACE._FACE      := PL_HOLDER_ID;
+    __tClient_PLACE._D_OPEN    := %CrMoment;
+    __tClient_PLACE._NAME      := __tFace_PL_HOLDER._NAME;
+    __tClient_PLACE.@POST;
+    PLACE_ID := _QA->InsClient_t(__tClient_PLACE);
+
+    // x_bankProp  := __tFace_OW1.___tBankProp_bProp;    
+    // _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW1_ID, __tBankProp_item);    
+
+    // --------------------------------------------------------------------------
+    _QA->Produce_RandomDepo_t(__tClient_PLACE2, List('NUMBER=*', 'SUBTYPE=1', 'TYPE_=1', 'LINK_NUMBER=ML0102220128', 'DD_NUM=ДЕПО/'+str(_QA->random(10000))));
+    __tClient_PLACE2.@EDIT;
+    __tClient_PLACE2._FACE      := PL_HOLDER_ID;
+    __tClient_PLACE2._D_OPEN    := %CrMoment;
+    __tClient_PLACE2._NAME      := __tFace_PL_HOLDER._NAME;
+    __tClient_PLACE2.@POST;
+    PLACE_ID2 := _QA->InsClient_t(__tClient_PLACE2);
+
+    // x_bankProp  := __tFace_OW1.___tBankProp_bProp;    
+    // _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW1_ID, __tBankProp_item);    
+
+     
+    GS_SET(%Objects,'__tFace_ISS'     ,__tFace_ISS      );    
+    GS_SET(%Objects,'__tClient_PLACE' ,__tClient_PLACE  );
+    GS_SET(%Objects,'__tClient_PLACE2',__tClient_PLACE2 );
+    GS_SET(%Objects,'__tShare_ETF'    ,__tShare_ETF     );
+    GS_SET(%Objects,'AMOUNT_A'        ,  AMOUNT_A       );
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение')
+end;

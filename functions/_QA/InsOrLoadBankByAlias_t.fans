@@ -1,0 +1,83 @@
+// InsOrLoadBankByAlias_t(%Alias, %StDate:date; %__tBank_Profile:int):int
+// -----------------------------------------
+// Вставка в БД лица по его алиасу %Alias, любое лицо обращающееся в рамках тестовых активностей должно иметь в справочниках системы код с точки зрения MyFace, который равен алиасу.
+//     
+// В %Profile_t - возвращается таблица описывающаяя вставленый субъект (ЮЛ или ФЛ)
+// EKS 01.2020
+
+// Хочешь узнать структуру таблицы %Profile_t вызови _QA->_GenRequizFace и в _QA._L2 получишь список полей с типами
+
+var dt, FACE_ID, FIELDS, __tFace_Bank, __tFace_BankNew, __tCode_c, __tCode_new;
+
+FACE_ID  := clear(0);
+FIELDS   := List();
+//TableClear(%Profile_t);
+
+if (isBlank(%StDate)) then
+    Dt := Date(Now)
+else
+    Dt := %StDate
+end;    
+
+SelectSQL('Данные', [ SELECT f.self_id 
+                      FROM od_faces f
+                          LEFT JOIN od_face_coders fc on fc.FACE = f.SELF_ID
+                      WHERE f.LAST_FLAG = 1 and UPPER(TRIM(fc.CODE)) = :C and fc.CODER = :CODER], Trim(UpperCase(%Alias)), MyFace, FACE_ID, exit);
+__tFace_BankNew := _TYPES->tFace;
+if isBlank(FACE_ID) then
+    if TableFind(_QA.BankGentors, List('Alias='+UpperCase(%Alias))) then
+        Eval('', [_QA->]+_QA.BankGentors._code+[(%__tBank_Profile, Dt);]);
+        // вставлять в базу Банк (__tBank) мы не умеем, поэтому будем делать вставку через вставку лица InsFace_t, предварительно скопировав в профиль типа __tFace_BankNew информацию из %__tBank_Profile
+        __tFace_Bank := %__tBank_Profile.___tFace_Bank;
+        _QA->CopyTab(__tFace_Bank, __tFace_BankNew, 0);
+        // переписываем тикеры из банковского профиля __tBank в __tFace
+        __tFace_BankNew.@EDIT;
+        __tCode_new :=  __tFace_BankNew.___tCode_CODES;
+        __tCode_c   := %__tBank_Profile.___tCode_CODES;
+        __tCode_c.@FIRST;
+        While ~__tCode_c.@EOF do
+            _QA->CopyTab(__tCode_c, __tCode_new, 0);
+            __tCode_c.@NEXT;
+        End;        
+        __tFace_BankNew.@POST;
+        
+        try
+            FACE_ID :=_QA->InsFace_t(__tFace_BankNew);
+        except
+            raise([{ "placeType" : "Функция",
+                     "placeName" : "_QA->InsBankByAlias_t",
+                      "mess"     : "Ошибка при вставке субъекта с кодом/тикером ]+ str(%Alias)+ [. Детали:]+Exception.text+["}]);
+            //propagate;
+        end;
+        ExecSQL('Данные', [ INSERT INTO OD_BANKS(BIC,CITY,KORR,U_FACE,SWIFT,IS_INSURANCE,REG_NUM)         
+                            VALUES (:BIC,:CITY,:KORR,:BANK,:SWIFT,:IS_INSURANCE,:REG_NUM)],
+                             %__tBank_Profile._BIC, %__tBank_Profile._CITY, %__tBank_Profile._KORR, FACE_ID, %__tBank_Profile._SWIFT, %__tBank_Profile._IS_INSURANCE, %__tBank_Profile._REG_NUM);        
+    else
+        raise([{ "placeType" : "Функция",
+                 "placeName" : "_QA->InsBankByAlias_t",
+                  "mess"     : "В библиотеке нет шаблона субъекта с именем ]+ str(%Alias)+ ["}]);   
+    end;
+else
+    // Если лицо с таким кодом уже есть в базе, то загрузим его в таблицу-профиль и вернем его SELF_ID
+    // __tFace_Bank := %__tBank_Profile.__tFace_Bank;
+    // __tFace_Bank.@EDIT;
+    // _QA->LoadProfileFace_t( FACE_ID, %StDate, __tFace_Bank );
+    // __tFace_Bank.@POST;
+    //__tFace_BankNew.@EDIT;
+    _QA->LoadProfileFace_t( FACE_ID, %StDate, __tFace_BankNew );
+    //__tFace_BankNew.@POST;
+    
+    __tFace_BankNew.@LAST;
+    __tFace_Bank := %__tBank_Profile.___tFace_Bank;
+    __tFace_Bank.@EDIT;
+    _QA->CopyTab(__tFace_BankNew, __tFace_Bank, 0);
+    __tCode_new   :=  __tFace_BankNew.___tCode_CODES;
+    __tCode_c := %__tBank_Profile.___tCode_CODES;
+    __tCode_new.@FIRST;
+    While ~__tCode_new.@EOF do
+        _QA->CopyTab(__tCode_new, __tCode_c, 0);
+        __tCode_new.@NEXT;
+    End;    
+end;
+
+FACE_ID;

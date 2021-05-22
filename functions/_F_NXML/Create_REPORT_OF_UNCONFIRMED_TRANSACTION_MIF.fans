@@ -1,0 +1,142 @@
+//Create_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF(%doc_id:int; %reg_num:str; %reg_date:DateTime; %encoding:str; %directory; %OEMConvert)
+//Запрос сверки при выдаче/погашении/обмене паев
+//SEG
+
+var VERSION := _F_NXML->Get_XSD_Version, WHOS:=_Sys_Setings_F.OD_SETS._WHOS;
+var xmlNAME:='REPORT_OF_UNCONFIRMED_TRANSACTION_MIF';
+var ErrList:='', info_str, DOC_I, out_doc_num, out_doc_date, in_doc_num, in_reg_date,
+    Prev_O_NUM:='', Prev_O_DATE:=Clear(now), D_CAT_SYS, NUM, D_DATE, DEPO_LS, SUBTYPE,
+    DEPO, SHARE, AMOUNT, NRD, NRD_OGRN, NRD_OGRN_DATE, TRANS_TYPE, CODE_BASE_TRANS, B_REST, B_ACC_ACC,
+    Z_NUM, Z_DATE;
+
+try
+   NRD:=Extract1('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+except
+   raise("В системе найдено несколько юр.лиц с мнемоникой 'НДЦ'");
+end;
+if IsBlank(NRD) then raise("В системе не найдено юр.лицо с мнемоникой 'НДЦ'"); end;
+
+for 'Данные'
+select [select D.NUM, D.D_DATE
+        from OD_DOC_CATS DC, OD_DOCS D 
+           left join D_IN_MESS M on D.ID=M.DOC
+        where D.D_CAT=DC.ID and D.WHOS=:WHOS and D.KVIT=:KVIT and DC.SYS_NAME='OUT_MESS_NRD' and M.MAIL_PARAM='NRD_REPORT_OF_UNCONFIRMED_TRANSACTION_MIF'
+        order by D.D_DATE desc, D.NUM desc]
+from WHOS, %doc_id
+into Prev_O_NUM, Prev_O_DATE do
+   exit;
+end;
+
+D_CAT_SYS:=Extract('Данные', 'select DC.SYS_NAME from OD_DOCS D left join OD_DOC_CATS DC on DC.ID=D.D_CAT where D.ID=:ID', %doc_id);
+if (D_CAT_SYS='R_PAI_BUY') or (D_CAT_SYS='R_PAI_SALE') then //распоряжение на выдачу/погашение паев
+   ExtractSQL('Данные',
+        [select D.NUM, D.D_DATE, R.B_ACC, C.SUBTYPE, C.ID, R.SHARE, R.AMOUNT, R.B_ACC_ACC, R.O_NUM, R.O_DATE
+         from OD_DOCS D
+            left join OD_DOCS DZ on DZ.ID=D.KVIT
+            left join D_REESTR R on R.DOC=D.ID
+            left join OD_OPERATORS O on O.USER_ID=USER
+            left join OD_CLIENTS C on C.PLAN_ID=O.PLAN_ID and C.NUMBER=R.B_ACC
+         where D.ID=:DOC], %doc_id, NUM, D_DATE, DEPO_LS, SUBTYPE, DEPO, SHARE, AMOUNT, B_ACC_ACC, Z_NUM, Z_DATE);
+   if IsBlank(Z_NUM) then raise('Не задано основание для внесения записи в реестр'); end;
+   if SUBTYPE<>102 then raise('Распоряжение должно быть по лицевому счету номинального держателя центрального депозитария'); end;
+   if D_CAT_SYS='R_PAI_BUY' then //распоряжение на выдачу паев
+      TRANS_TYPE:='RECE';  //зачисление
+      CODE_BASE_TRANS:='TR14';
+   else //распоряжение на погашение паев
+      TRANS_TYPE:='DELI';  //списание
+      CODE_BASE_TRANS:='TR15';
+   end;
+else
+   raise('Формирование запроса сверки не предусмотрено для данной категории документов');
+end;
+
+//=====================к о д и р о в к а========================================
+self.FileName:=_F_XML->Get_File_Name(%directory, %reg_num, %reg_date);
+self.OEMConvert:=%OEMConvert;
+//==========================================================================
+
+out('<?xml version="1.0" encoding="'+%encoding+'"?>');
+out('<'+xmlNAME+'>');
+
+DOC_I:=_F_IN_MESS->EDO_Find_IN_MESS(%doc_id);
+if IsBlank(DOC_I) then
+   out_doc_num:=in_doc_num:='NONREF';
+   out_doc_date:=in_reg_date:=Date('01.01.1900');
+else
+   ExtractSQL('Данные',
+              [select I.THEIR_NUM, I.THEIR_DATE, D.NUM, D.D_DATE
+               from OD_IN_DOCS I, OD_DOCS D
+               where I.DOC=:DOC and I.DOC=D.ID], DOC_I,
+       out_doc_num, out_doc_date, in_doc_num, in_reg_date);
+end;
+_F_NXML->Out_Answer_Doc_t(VERSION, %reg_num, %reg_date, out_doc_num, out_doc_date, in_doc_num, iif(IsBlank(DOC_I), Clear(now), in_reg_date), info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+//указание на предыдущий запрос сверки
+if IsBlank(Prev_O_NUM) then
+   _F_NXML->Out_Ref_dtls_t('previous_ref', 'NONREF', Date('01.01.1900'), '');
+else
+   _F_NXML->Out_Ref_dtls_t('previous_ref', Prev_O_NUM, Prev_O_DATE, '');
+end;
+
+//лицевой счет НДЦД
+_F_NXML->Out_Account_dtls_v02_t('account_dtls_v02', DEPO_LS, 'NSDR', '',SUBTYPE, '');
+_f_report->GetUFace(NRD, D_DATE);
+NRD_OGRN:=_f_report.GetUFace.OGRN;
+NRD_OGRN_DATE:=_f_report.GetUFace.OGRN_DATE;
+//реквизиты НРД
+_F_NXML->Out_Party_identification_t('account_holder_v02', NRD_OGRN, 'OGRN', '', NRD_OGRN_DATE, info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+_F_NXML->Out_Security_info_t('security', SHARE, info_str);
+ErrList:=_F_REPORT->Add_Info(ErrList, info_str);
+
+_F_XML->Out_TAG('total_linked_instructions', '1');
+
+//входящий остаток по пассивным счетам
+B_REST:=Extract('Данные',
+          [select f_Round(sum(T.TYPE_*T.VALUE_), V.MFU)
+           from OD_OPERATORS O
+             left join OD_ACC_PLANS AP on AP.WHOS=O.U_FACE and AP.SYS_NAME='REESTR'
+             left join OD_BALANCES B on B.ACC_PLAN=AP.ID and ACC_TYPE=2
+             left join OD_RESTS R on R.BAL_ACC=B.ID and R.REG_1=:DEPO and R.VALUE_ID=:S
+             left join OD_VALUES V on V.ID=R.VALUE_ID
+             left join OD_TURNS T on T.REST=R.ID and T.WIRDATE>=:D and T.WIRDATE<='01.01.9999'
+           where O.USER_ID=USER and T.IS_PLAN='F'
+           group by V.MFU], DEPO, SHARE, D_DATE);
+if isBlank(B_REST) then B_REST := 0.0; end;
+Out('<transactions_info_mif>');
+   _F_XML->Out_TAG('current_instruction_number', '1');
+   _F_XML->Out_TAG('transaction_type', TRANS_TYPE);
+   _F_XML->Out_TAG('code_base_transactions', CODE_BASE_TRANS);
+   Out('<doc_link_request>');
+      if IsBlank(Z_NUM) then
+         Z_NUM:='UKWN';
+         Z_DATE:=Date('01.01.1900');
+      end;
+      _F_XML->Out_TAG('doc_num', Z_NUM);
+      _F_NXML->Out_Date_or_Time('doc_date', Str(Z_DATE));
+   Out('</doc_link_request>');
+   _F_NXML->Out_Quantity_In_Unit_t('quantity', AMOUNT, Clear(0), Clear(0));
+   _F_XML->Out_TAG('block_indicator', 'No');
+   _F_NXML->Out_Quantity_In_Unit_t('opening_balance', B_REST, Clear(0), Clear(0));
+   _F_NXML->Out_Quantity_In_Unit_t('closing_balance', B_REST+iif(TRANS_TYPE='RECE',AMOUNT,-AMOUNT), Clear(0), Clear(0));
+   Out('<processing_info>');
+      _F_NXML->Out_Doc_Link_t('link', in_doc_num, Z_NUM, in_reg_date, Z_DATE);
+      _F_NXML->Out_Date_or_Time('processing_datetime', D_DATE);
+      _F_XML->Out_TAG('processing_reference', NUM);
+   Out('</processing_info>');
+   _F_XML->Out_TAG('owner', B_ACC_ACC);
+Out('</transactions_info_mif>');
+
+out('</'+xmlNAME+'>');
+
+if ~IsBlank(ErrList) then raise(ErrList); end;
+
+//Проверяем XML по схеме
+self.@Close;
+if not _F_NXML->XMLCheck(_F_NXML->Get_XSD_Version ,self.FileName, '', info_str) then
+   raise(info_str);
+end;
+
+self.FileName;

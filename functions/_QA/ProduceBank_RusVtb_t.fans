@@ -1,0 +1,98 @@
+// ProduceBank_RusVtb_t(%Tab, %StartDate):int;
+var mm, x_bank, x_codes, __tFace_Bank;
+try
+    _TYPES->CheckType(%tab, 'TBank');
+except
+    raise([{ "placeType" : "Функция",
+             "placeName" : "_QA->ProduceBank_RusVtb_t",
+             "mess"      : "]+Exception.text+["}]);
+end;
+ 
+__tFace_Bank := _TYPES->tFace;  // пустышка, чтобы сложить в нее профиль полученный функцией ProduceFace_JurRusVtb_t
+_QA->ProduceFace_JurRusVtb_t(__tFace_Bank, %StartDate);
+x_bank := %Tab.___tFace_Bank;
+
+%Tab.@EDIT;
+%Tab._CITY         := 'г. МОСКВА';
+%Tab._KORR         := '30101810700000000187';
+%Tab._SWIFT        := clear('');
+%Tab._IS_INSURANCE := 1;
+%Tab._REG_NUM      := clear('');
+%Tab._BIC          :='044525187';
+
+__tFace_Bank.@LAST;
+x_bank.@EDIT;
+//         __tFace_Bank --> x_bank
+_QA->CopyTab(__tFace_Bank, x_bank);
+x_bank.@POST;
+
+//x_bank.@EDIT;
+//x_bank._B_DATE        := __tFace_Bank._B_DATE       ; 
+//x_bank._E_DATE        := __tFace_Bank._E_DATE       ; 
+//x_bank._NAME          := __tFace_Bank._NAME         ; 
+//x_bank._INN           := __tFace_Bank._INN          ; 
+//x_bank._S_TYPE        := __tFace_Bank._S_TYPE       ; 
+//x_bank._MAIL_ADR      := __tFace_Bank._MAIL_ADR     ; 
+//x_bank._HOME_ADR      := __tFace_Bank._HOME_ADR     ; 
+//x_bank._FACT_ADR      := __tFace_Bank._FACT_ADR     ; 
+//x_bank._MAIL_KLADR    := __tFace_Bank._MAIL_KLADR   ; 
+//x_bank._HOME_KLADR    := __tFace_Bank._HOME_KLADR   ; 
+//x_bank._FACT_KLADR    := __tFace_Bank._FACT_KLADR   ; 
+//x_bank._MNEM          := __tFace_Bank._MNEM         ; 
+//x_bank._EMAIL         := __tFace_Bank._EMAIL        ; 
+//x_bank._FAX           := __tFace_Bank._FAX          ; 
+//x_bank._TELEX         := __tFace_Bank._TELEX        ; 
+//x_bank._KPP           := __tFace_Bank._KPP          ; 
+//x_bank._PHONE         := __tFace_Bank._PHONE        ; 
+//x_bank._STATE         := __tFace_Bank._STATE        ; 
+//x_bank._DATE_BIRTH    := __tFace_Bank._DATE_BIRTH   ; 
+//x_bank._DATE_DEPTH    := __tFace_Bank._DATE_DEPTH   ; 
+//x_bank._REGN          := __tFace_Bank._REGN         ; 
+//x_bank._BRANCHES      := __tFace_Bank._BRANCHES     ; 
+//x_bank._IS_NERES      := __tFace_Bank._IS_NERES     ; 
+//x_bank._DOC_TYPE      := __tFace_Bank._DOC_TYPE     ; 
+//x_bank._DOC_DAT       := __tFace_Bank._DOC_DAT      ; 
+//x_bank._DOC_END       := __tFace_Bank._DOC_END      ; 
+//x_bank._DOC_CODE      := __tFace_Bank._DOC_CODE     ; 
+//x_bank._DOC_SER       := __tFace_Bank._DOC_SER      ; 
+//x_bank._DOC_NUM       := __tFace_Bank._DOC_NUM      ; 
+//x_bank._DOC_PLACE     := __tFace_Bank._DOC_PLACE    ; 
+//x_bank._IMAGEFILE     := __tFace_Bank._IMAGEFILE    ; 
+//x_bank._ENG_NAME      := __tFace_Bank._ENG_NAME     ; 
+//x_bank._ENG_MAIL_ADR  := __tFace_Bank._ENG_MAIL_ADR ; 
+//x_bank._FULL_NAME     := __tFace_Bank._FULL_NAME    ;
+//x_bank._ENG_FULL_NAME := __tFace_Bank._ENG_FULL_NAME;
+//x_bank._OKPO          := __tFace_Bank._OKPO         ;
+//x_bank._OKONX         := __tFace_Bank._OKONX        ;
+//x_bank._OPF           := __tFace_Bank._OPF          ;
+//x_bank._FS            := __tFace_Bank._FS           ; 
+//x_bank._CAPITAL       := __tFace_Bank._CAPITAL      ;
+//x_bank._EXEC_ORGAN    := __tFace_Bank._EXEC_ORGAN   ; 
+//x_bank._NAL_ORGAN     := __tFace_Bank._NAL_ORGAN    ; 
+//x_bank._OGRN_DATE     := __tFace_Bank._OGRN_DATE    ; 
+//x_bank._OGRN_PLACE    := __tFace_Bank._OGRN_PLACE   ; 
+//x_bank._OGRN          := __tFace_Bank._OGRN         ; 
+//x_bank._OKOGU         := __tFace_Bank._OKOGU        ; 
+//x_bank._OKATO         := __tFace_Bank._OKATO        ; 
+//x_bank._DOL_1         := __tFace_Bank._DOL_1        ; 
+//x_bank._DOL_2         := __tFace_Bank._DOL_2        ; 
+//x_bank._FIO_1         := __tFace_Bank._FIO_1        ; 
+//x_bank._FIO_2         := __tFace_Bank._FIO_2        ; 
+//x_bank._TEL_1         := __tFace_Bank._TEL_1        ; 
+//x_bank._TEL_2         := __tFace_Bank._TEL_2        ; 
+//x_bank._OSN_1         := __tFace_Bank._OSN_1        ; 
+//x_bank._OSN_2         := __tFace_Bank._OSN_2        ; 
+//x_bank._TEL_OTV       := __tFace_Bank._TEL_OTV      ; 
+//x_bank._TEL_BUG       := __tFace_Bank._TEL_BUG      ; 
+//x_bank._DOL_OTV       := __tFace_Bank._DOL_OTV      ; 
+//x_bank._FIO_OTV       := __tFace_Bank._FIO_OTV      ; 
+//x_bank._FIO_BUG       := __tFace_Bank._FIO_BUG      ;
+//x_bank.@POST;
+
+x_codes := x_bank.___tCode_CODES;
+x_codes.@APPEND;
+x_codes._CODE  := 'JurRusVtb';
+x_codes._CODER := MyFace;
+x_codes.@POST;
+
+%Tab.@POST;

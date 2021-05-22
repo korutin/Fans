@@ -1,0 +1,385 @@
+// Get_Restricted_reestr2_qa05
+// --------------------------------------------------------------------------------------
+// UNIT тестовая функция для проверки работы мета-функции Get_Restricted_reestr(%ACC_ID :int, %SHARE :int, %R_DATE:DateTime, %MX :int, %RMX :int, ZDL,ZDR,BLOCK,BEN_ZDR,BLOCK_5,BLOCK_CA,BLOCK_CL,ZALOG,BLIN :float; DogList :list; Obr_List:list ):float
+// Возвращаемое значение 0 - passed   (тест прошел)
+//                       1 - fail     (тест не прошел)
+//                       2 - broken   (тест вызвал исключение)
+//                       3 - canceled (тест упал при создание предусловия/окружения)
+// Выходные параметры:
+//           tt -  таблица T:=Table(scenario str, result int, log List)  с одной записью
+//                                      scenario : символьный код тестового сценария в системе тестирования
+//                                      Result   : 0 - passed (тест прошел); 1 - fail (тест не прошел); 2 - broken (тест вызвал исключение); 3 - canceled (тест упал при создание предусловия/окружения)
+//                                      tStart   : дата/время запуска теста
+//                                      tEnd     : дата/время окончания/падения теста
+//                                      log      : список строк с ошибками
+uses _TYPES;
+var issueMoment, zaloger1CreateMoment, zaloger2CreateMoment, owner1AccOpenMoment, UKCreateMoment, UKAccOpenMoment,
+    owner1CreateMoment, owner2CreateMoment, getRestMoment, 
+    zalogMoment1, zalogMoment2, freezeMoment,
+    RR1:=List(), ZALOGER1, ISSUER, DepoA, EMI_UK, EMI_ETF, UK, SD_ID, SHARE, ID, DepoA_OWNER, c, ErrList, err_c, x_meta, x_share,
+    SE, SE1, SE21, SE22, SE3, SE41, SE42, SE51, SE52, SE61, SE62, RestA, 
+    ZALOG, BLIN, BLOCK, BLOCK_DEATH, BLOCK_ON_LOW, BLOCK_ON_CLAIM, BLOCK_KD, Obr_List,
+    ZALOG_et, BLIN_et, BLOCK_et, BLOCK_DEATH_et, BLOCK_ON_LOW_et, BLOCK_ON_CLAIM_et, BLOCK_KD_et, Obr_List_et,     
+    D_ID, COND_ID1, COND_ID21, COND_ID22, COND_ID3, CONDB_ID51, CONDB_ID52, CONDB_ID53, CONDITION_ID5, CONDITION_ID6,
+    GROUND_DOC_ZALOG1, COMMENT_DOC_ZALOG1, GROUND_DOC_ZALOG2, GROUND_DOC_ZALOG3, COMMENT_DOC_ZALOG3,
+    GROUND_DOC_BLOCK_A1, GROUND_DOC_BLOCK_A2, GROUND_DOC_BLOCK_A3, COMMENT_DOC_BLOCK_A1, COMMENT_DOC_BLOCK_A2, COMMENT_DOC_BLOCK_A3;
+    
+var RestA_BL_et, RestA_Z_et, REST_et, Rest_Give, Rest_Own, result, tStart, tEnd; 
+var LOGK := List();
+var QA_CODE := 'Get_Restricted_reestr2_qa04', REG;
+
+// $meta begin
+var __tFace_Owner1   := _TYPES->tFace;
+var __tFace_Zaloger1 := _TYPES->tFace;
+var __tFace_Zaloger2 := _TYPES->tFace;
+var __tFace_UK       := _TYPES->tFace;
+var __tFace_SD       := _TYPES->tFace;                                   
+var __tFace_ETF      := _TYPES->tFace;
+
+var __tShare_ETF     := _TYPES->tShare;
+var __tClient_OwnerAcc1  := _TYPES->tClient;
+var __tClient_GivePaiAcc := _TYPES->tClient;
+var __tClient_EmiAcc     := _TYPES->tClient;
+var               Affils := Table( RELATION int, FACE int, B_DATE date, A_END date),
+    __tZalogCond_ZDoc    := Table( NUM str, D_DATE datetime, C_STATE int, DEPONENT int, DEPO_ACC str, DOC int, D_TYPE int, SHARE int, NUMBER str, CONTRAGENT int, AMOUNT float, D_SUBTYPE int, B_DATE date, E_DATE date),
+    __tBlockCond_ZDoc    := Table( NUM str, D_DATE datetime, C_STATE int, DEPONENT int, DEPO_ACC str, DOC int, D_TYPE int, SHARE int, NUMBER str, CONTRAGENT int, AMOUNT float, D_SUBTYPE int, B_DATE date, E_DATE date),
+    __tBlockCond_ZDoc2   := Table( NUM str, D_DATE datetime, C_STATE int, DEPONENT int, DEPO_ACC str, DOC int, D_TYPE int, SHARE int, NUMBER str, CONTRAGENT int, AMOUNT float, D_SUBTYPE int, B_DATE date, E_DATE date);
+// $meta end
+ErrList :='';
+result  := _QA.PASSED;
+TableClear(%tt);
+tStart  := now;
+_METAL_F->GS_Clear(_QA.VERTEX);
+TableClear(_QA.REBRA);
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+// Создание Лица с указанием его реквизитов напрямую
+     
+try
+
+    // Надо это безобразие будет также заменить
+    REG          := MyFace;                                                  // TO-DO (Сделать функцию, которая загружает в профиль типа __tFace данные из указанного лица в базе данных; указание через SELF_ID)
+    ISSUER       := 16748;
+    //SHARE        := 10068;
+    SE           := List();                                                  // Список побочных эффектов (например ID-ки вспомогательных документов)
+    owner1CreateMoment   := DateTime('20.03.2020 10:00:00');                  // Дата/время включения первого владельца в справочники
+    owner2CreateMoment   := DateTime('20.03.2020 10:00:00');                  // Дата/время включения второго владельца в справочники
+    UKCreateMoment       := DateTime('20.03.2020 10:00:00');                  // Дата/время включения Управляющей компании в справочники
+    UKAccOpenMoment      := DateTime('20.03.2020 10:00:00');                  // Дата/время открытия счета УК
+    zaloger1CreateMoment := DateTime('20.03.2020 10:00:00');                  // Дата/время включения будущего залогодержателя_1 в справочники
+    zaloger2CreateMoment := DateTime('20.03.2020 10:00:00');                  // Дата/время включения будущего залогодержателя_2 в справочники
+    owner1AccOpenMoment  := DateTime('29.03.2020 15:00:00');                  // Дата/время открытия лицевого счета ПЕРВОГО владельца
+    //UKAccOpenMoment     :=
+    issueMoment          := DateTime('26.03.2020 15:13:00');                  // Дата/время выдачи паев на счет владельца
+    zalogMoment1         := DateTime('27.03.2020 12:12:00');                  // Дата/время залога паев на счете владельца
+    zalogMoment2         := DateTime('28.03.2020 16:00:00');                  // Дата/время последующего залога2 паев на счете владельца    
+    freezeMoment         := DateTime('29.03.2020 09:30:00');                  // Дата/время ареста паёв
+    getRestMoment        := DateTime('01.04.2020 23:00:00');                  // Дата/время на которое смотрим остаток по счету
+    Rest_Give            := 300.5;
+    Rest_Own             := 173.0;
+    RestA_Z_et           := 130.0;
+    RestA_BL_et          := 173.0;
+    REST_et              := RestA_Z_et;                                       // Количество Заложенных паев это не сумма по отдельности
+    
+    ZALOG_et             := 130.0;                                            // Эталонное значение количества заложенных паев 
+    BLIN_et              := 173.0;                                            // Эталонное значение количества арестованных паев 
+    BLOCK_et             := 0.0;                                              // Эталонное значение количества просто блокированных паев (без указания причины)
+    BLOCK_DEATH_et       := 0.0;                                              // Эталонное значение количества паев блокированных в связи со смертию
+    BLOCK_ON_LOW_et      := 0.0;                                              // Эталонное значение количества паев блокированных на основании ФЗ
+    BLOCK_ON_CLAIM_et    := 0.0;                                              // Эталонное значение количества паев блокированных по заявлению
+    BLOCK_KD_et          := 0.0;                                              // Эталонное значение количества паев блокированных под корпоративное действие
+    Obr_List_et          := List();
+    
+    GROUND_DOC_BLOCK_A1   := 'Основание 1';
+    COMMENT_DOC_BLOCK_A1  := 'Постановление о наложении ареста на имущество должника б/н .....';
+    GROUND_DOC_BLOCK_A2   := 'Основание 2';
+    COMMENT_DOC_BLOCK_A2  := 'Постановление суда от 04.08.2020, вх№ 200819/00019 от 19.08.2020';
+    
+    GROUND_DOC_ZALOG1     := 'Договор залога б/н от 15.03.2018';
+    COMMENT_DOC_ZALOG1    := 'Залоговое распоряжение вх№180316/00059 от 16.03.2018';
+    
+    
+    // -----------------------------------------------------------------------------
+    UK := _QA->InsFaceByAlias_t('JurRusDutyUK', Date(UKCreateMoment), __tFace_UK);     
+    // -----------------------------------------------------------------------------
+    // Создать дежурный спецдеп.
+    SD_ID := _QA->InsFaceByAlias_t('JurRusDutySpecDep', Date(UKCreateMoment), __tFace_SD);  
+
+    breakpoint;
+    // -----------------------------------------------------------------------------
+    SHARE  := _QA->InsETFByAliasR_t( 'RusCloseProp-ETF01-HistDpt2', issueMoment,  __tFace_ETF, __tShare_ETF, null, null, UK, SD_ID);
+    x_share:= __tShare_ETF.___tShares;    
+    ISSUER := x_share._ISSUER;
+    
+    // -----------------------------------------------------------------------------
+    // Открыть счет управляющей компании "выдаваемые инвестиционные паи"
+    // RR2    := _QA->InsFaceClientByAlias_t('JurRusLtdUK-03',  'VP-01',  Date(UKCreateMoment), Date(UKAccOpenMoment), ISSUER, __tFace_UK,    __tClient_GivePaiAcc);
+    EMI_UK := _QA->InsClientByAlias_t( 'VP-01', Date(UKAccOpenMoment), UK, ISSUER, null, __tClient_GivePaiAcc);
+    //EMI_UK := int(ListVal(RR2,'CLIENT'));
+    //UK     := int(ListVal(RR2,'FACE'));
+
+    // -----------------------------------------------------------------------------
+    // Открыть лицевой счет первого владельца - юридического лица
+    RR1         := _QA->InsFaceClientByAlias_t('JurRusLtdFin-04', 'OW-01',  Date(owner1CreateMoment), Date(owner1AccOpenMoment), ISSUER, __tFace_Owner1, __tClient_OwnerAcc1);
+    DepoA       := int(ListVal(RR1,'CLIENT'));
+    DepoA_OWNER := int(ListVal(RR1,'FACE'));
+
+    // -----------------------------------------------------------------------------
+    // Создать будущего Залогодержателя (контрагента по обременению) для Залога1 - Юридическое лицо
+    ZALOGER1   := _QA->InsFaceByAlias_t('JurRusLtdUK-01', date(zaloger1CreateMoment), __tFace_Zaloger1);
+
+    // -----------------------------------------------------------------------------
+    // Открыть лицевой счет фонда (эмиссионный)
+    // Придется намешать немного логики на случай если в базе уже открыт лицевой счет фонда у фонда ISSUER
+    c := 0;
+    SelectSQL('Данные', [select ID from OD_CLIENTS where SUBTYPE = 7 and ISSUER = :ISS], ISSUER, ID, inc(c);EMI_ETF:=ID;exit);
+    // Если в базе еще нет лицевого счета фонда (что в общем то хочется ожидать), то импортируем его из библитэки артефактов, если же есть, то берем то что есть.
+    if (c<1) then
+        EMI_ETF   := _QA->InsClientByAlias_t('EM-01', Date(UKCreateMoment), UK, ISSUER, null{AFFILS}, __tClient_EmiAcc);
+    end;
+
+    // -----------------------------------------------------------------------------
+    // Выдать паи с лицевого счета фонда на лицевой счет управляющей компании 
+    SE1 := _QA->IssueEtf(DateTime(issueMoment), EMI_ETF, EMI_UK, SHARE, Rest_Give, '');        
+    
+    // -----------------------------------------------------------------------------
+    // Выдать паи владельцу на лицевой счет DepoA
+    SE21 := _QA->IssueEtf(DateTime(issueMoment), EMI_UK, DepoA, SHARE, Rest_Own, '');
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи владельца залогом1
+    COND_ID1   := clear(0);
+    COND_ID21  := clear(0);
+    COND_ID22  := clear(0);
+    COND_ID3   := clear(0);
+    CONDB_ID51 := clear(0);
+    CONDB_ID52 := clear(0);
+    CONDB_ID53 := clear(0);
+    
+// ZalogEtf_( %D_DATE         : DateTime, // Дата/время обременения залогом ( проводки представляющей собой залог)
+//            %DEPO           : Int,      // Лицевой счет, на паи которого накладывается обременение
+//            %AGENT          : Int,      // Агент (есть такое поле на карточке операции)
+//            %SHARE          : Int,      // Пай ( ссылка на ценную бумагу - пай )
+//            %AMOUNT         : Float,    // Количество обременяемых паев
+//            %COMMENT        : Str,      // Комментарий (для карточки операции "Обременение обязательствами")
+//            %IN_CONDITION   : Int,      // Ссылка на условие залога, если такой документ уже создан (необходимо для случая нескольких операций обременения по одному условию залога)
+//                                        //         Если документа Условие залога еще нет (параметр равен null), то он создается и его ID возвращается через вых параметр CONDITION_ID
+//            %OLD_CONDITIONS : Int,      // Ссылка на документа "Условия залога"/"Обременение обязательствами" в случае последующего залога. Должно быть null если залог не последующий
+//            -------   Если %IN_CONDITION не равен null, то последующие вх.параметры игнорируются, можно указывать null
+//            %B_DATE         : Date,     // Дата взыскания (для документа "Условия залога")
+//            %E_DATE         : Date,     // Дата окончания (для документа "Условия залога")
+//            %D_SUBTYPE      : Int,      // Тип договора (Залог, Цессия) - для документа "Условия залога"
+//            %C_STATE        : Int,      // Условия договора залога ( битовая маска )
+//            %DEPONENT       : Int;      // Залогодатель (для документа "Условия залога")
+//            %CONTRAGENT     : Int,      // Залогодержатель (для документа "Условия залога" и для карточки операции "Обременение обязательствами")
+//            %GROUND_DOC     : Str,      // Наименование первичного документа (для документа "Условия залога" )
+//            %AMOUNT_COND    : Float,    // Количество паев (для документа "Условие залога"), количество в Условиях может отличаться от того, которое указано в Обременениях ссылающихся на Условие залога
+//            CONDITION_ID    : Int       // Ссылка в БД на документ "Условия залога"
+//):List    
+    
+    SE3 := _QA->ZalogEtf( zalogMoment1,                           //                 // Дата/время обременения
+                          DepoA,                                  //                 // Лицевой счет, где лежат паи на которые накладывается обременение
+                          UK,                                     //                 // Агент
+                          SHARE,                                  //                 // Пай
+                          RestA_Z_et,                             //                 // Количество обремененняемых залогом паев
+                          COMMENT_DOC_ZALOG1,                     // %COMMENT        // Комментарий (для карточки операции "Обременение обязательствами")
+                          clear(0),                               // %IN_CONDITION   // Ссылка на документа "Условия залога" / указывается если документ "Условие залога" уже создан, например при создании предыдущей операции Обременения
+                          clear(0),                               // %OLD_CONDITIONS // Ссылка на документа "Условия залога" в случае последующего залога. Должно быть null если залог не последующий
+                          date(zalogMoment1),                     //                 // Дата начала залога
+                          clear('01.01.9999'),                    //                 // Дата конца залога
+                          2,                                      // %D_SUBTYPE      // Тип залога (2 - залог;4 - цессия) для документа Условия залога
+                          96,                                     // %C_STATE        // Условия договора залога (для документа Условия залога)
+                          DepoA_OWNER,                            // %DEPONENT       // Залогодатель (для документа "Условия залога")
+                          ZALOGER1,                               // %CONTRAGENT     // Залогодержатель (для документа "Условия залога" и для карточки операции "Обременение обязательствами")
+                          GROUND_DOC_ZALOG1,                      // %GROUND_DOC     // Наименование первичного документа (для документа "Условия залога" )
+                          RestA_Z_et,                                                // Количество обремененняемых залогом паев (в документ "Условие залога" )
+                          COND_ID1                                // Возвращаемая ссылка на созданное Условие залога (выходной параметр) 
+    );     
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Арестом (первая часть блокировки)    
+    //   Общее Условие блокировки для разбитой на 2 части операции обременения
+    TableInsert( __tBlockCond_ZDoc, List(
+                 'NUM=',
+                 'D_DATE='     +iif(isBlank( freezeMoment),'', str(freezeMoment)),
+                 'C_STATE=0'   ,                                                                  // Причина блокировки (Причина не указана)
+                 'DEPONENT='   +iif(isBlank( DepoA_OWNER),'',str(DepoA_OWNER)),
+                 'DEPO_ACC='   +iif(isBlank( DepoA),'',str(DepoA)),
+                 'DOC=0'       ,
+                 'D_TYPE=1',   // Количественные условия                                          // Тип блокировки (1 - Блокировке подлежит указанное количество ЦБ) для документа Обременение обязательствами
+                 'NUMBER='     +iif(isBlank( GROUND_DOC_BLOCK_A2),'',str( GROUND_DOC_BLOCK_A2)),
+                 'CONTRAGENT=' +iif(isBlank( REG),'',str( REG)),                                  // Контрагент 
+                 'AMOUNT='     +iif(isBlank( Rest_Own),'',str( Rest_Own)),            
+                 'D_SUBTYPE=3' ,                                                                  // Тип блокировки (1 - Блокировка; 3 - Арест) для документа Условие блокировки
+                 'B_DATE='     + str( date(freezeMoment)),                                        // Дата начала блокировки
+                 'E_DATE='     + '01.01.9999'                                                     // Дата конца блокировки
+    ));    
+    CONDITION_ID5 := _QA->InsBlockConditions(__tBlockCond_ZDoc);    
+    
+    SE51:= _QA->BlockEtfWithCond( freezeMoment,                           // Дата/время обременения
+                                  DepoA,                                  // Лицевой счет, на который накладывается обременение
+                                  REG,                                    // Агент
+                                  SHARE,                                  // Пай
+                                  RestA_Z_et,                             // Количество блокируемых паев (для Обремения обязательствами)
+                                  COMMENT_DOC_BLOCK_A1,                   // Комментарий (для карточки операции "Обременение обязательствами")
+                                  CONDITION_ID5,                          // ID документа "Условие блокировки"
+                                  COND_ID1                                // Ссылка на предыдущее обременение
+    );
+    
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Арестом (вторая часть блокировки)
+    SE52:= _QA->BlockEtfWithCond( freezeMoment,                           // Дата/время обременения
+                                  DepoA,                                  // Лицевой счет, на который накладывается обременение
+                                  REG,                                    // Агент
+                                  SHARE,                                  // Пай
+                                  RestA_BL_et-RestA_Z_et,                 // Количество блокируемых паев (для Обремения обязательствами)
+                                  COMMENT_DOC_BLOCK_A1,                   // Комментарий (для карточки операции "Обременение обязательствами")
+                                  CONDITION_ID5,                          // ID документа "Условие блокировки"
+                                  clear(0)      //CONDITION_ID4           // Ссылка на предыдущее обременение
+    );
+    
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Арестом второй разй (первая часть блокировки)
+    //   Общее Условие блокировки для разбитой на 2 части операции обременения
+    TableInsert( __tBlockCond_ZDoc2, List(
+                 'NUM=',
+                 'D_DATE='     +iif(isBlank( freezeMoment),'', str(freezeMoment)),
+                 'C_STATE=0'   ,                                                                  // Причина блокировки (Причина не указана)
+                 'DEPONENT='   +iif(isBlank( DepoA_OWNER),'',str(DepoA_OWNER)),
+                 'DEPO_ACC='   +iif(isBlank( DepoA),'',str(DepoA)),
+                 'DOC=0'       ,
+                 'D_TYPE=1',   // Количественные условия                                          // Тип блокировки (1 - Блокировке подлежит указанное количество ЦБ) для документа Обременение обязательствами
+                 'NUMBER='     +iif(isBlank( GROUND_DOC_BLOCK_A2),'',str( GROUND_DOC_BLOCK_A2)),
+                 'CONTRAGENT=' +iif(isBlank( REG),'',str( REG)),                                  // Контрагент 
+                 'AMOUNT='     +iif(isBlank( Rest_Own),'',str( Rest_Own)),            
+                 'D_SUBTYPE=3' ,                                                                  // Тип блокировки (1 - Блокировка; 3 - Арест) для документа Условие блокировки
+                 'B_DATE='     + str( date(freezeMoment)),                                        // Дата начала блокировки
+                 'E_DATE='     + '01.01.9999'                                                     // Дата конца блокировки
+    ));    
+    CONDITION_ID6 := _QA->InsBlockConditions(__tBlockCond_ZDoc2);    
+    
+    SE61:= _QA->BlockEtfWithCond( freezeMoment,                           // Дата/время обременения
+                                  DepoA,                                  // Лицевой счет, на который накладывается обременение
+                                  REG,                                    // Агент
+                                  SHARE,                                  // Пай
+                                  RestA_Z_et,                             // Количество блокируемых паев ((блокируются остальные, свободные паи))
+                                  COMMENT_DOC_BLOCK_A2,                   // Комментарий (для карточки операции "Обременение обязательствами") 
+                                  CONDITION_ID6,                          // ID документа "Условие блокировки"
+                                  int(ListVal(SE51, 'DOC_OP'))            // Ссылка на предыдущее обременение
+     );
+
+    // -----------------------------------------------------------------------------
+    // Обременить паи первого владельца Арестом второй раз (вторая часть блокировки)
+    SE62:= _QA->BlockEtfWithCond( freezeMoment,                           // Дата/время обременения
+                                  DepoA,                                  // Лицевой счет, на который накладывается обременение
+                                  REG,                                    // Агент
+                                  SHARE,                                  // Пай
+                                  RestA_BL_et - RestA_Z_et,               // Количество блокируемых паев ((блокируются остальные, свободные паи))
+                                  COMMENT_DOC_BLOCK_A2,
+                                  CONDITION_ID6,                          // ID документа "Условие блокировки"
+                                  CONDITION_ID5                           // Ссылка на предыдущее обременение
+     );
+
+
+    //istAdd(Obr_List_A_et, 'D_E_ZALOGS_ZDL;'+str(RestA_Z_et)+';'+iif(~isBlank(ZALOGER1), str(ZALOGER1),'')+';;;'+GROUND_DOC_ZALOG1+';;;');
+    //ListAdd(Obr_List_A_et, 'BENEF_ZDL;'+str(RestA_Z_et)+';'+iif(~isBlank(ZALOGER1),str(ZALOGER1),'')+';;;'+GROUND_DOC_ZALOG1+';;;');
+    //ListAdd(Obr_List_A_et, 'D_E_BLOCKS;'+str(RestA_BL1_et)+';'+iif(~isBlank(REG),str(REG),'')+';;;'+GROUND_DOC_BLOCK_A1+';;3;0');
+    
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение. Exception [' + Exception.text + ']');
+    result := _QA.CANCELED;
+    tEnd   := now;
+end;
+
+// ------  Выполнение тестового сценария ------------------------------------------
+if (result <> _QA.CANCELED) then
+    try
+        // Вызов тестируемой функции
+        RestA := _F_REESTR->Get_Restricted_reestr2(DepoA,         // %ACC_ID : int, 
+                                                   SHARE,         // %SHARE  : int, 
+                                                   getRestMoment, // : DateTime, 
+                                                   ZALOG, BLIN, BLOCK, BLOCK_DEATH, BLOCK_ON_LOW, BLOCK_ON_CLAIM, BLOCK_KD, Obr_List);
+                                                   
+        // message( 'ZALOG=' + str(ZALOG) + #13 + #10 +             
+        //          'BLIN=' + str(BLIN) + #13 + #10 +              
+        //          'BLOCK=' + str(BLOCK) + #13 + #10 +             
+        //          'BLOCK_DEATH=' + str(BLOCK_DEATH) + #13 + #10 +  
+        //          'BLOCK_ON_LOW=' + str(BLOCK_ON_LOW) + #13 + #10 + 
+        //          'BLOCK_ON_CLAIM=' + str(BLOCK_ON_CLAIM) + #13 + #10 + 
+        //          'BLOCK_KD=' + str(BLOCK_KD) + #13 + #10);
+        
+        // ------------------------------------- Проверка результата --------------------------------------------------------------
+        err_c  := 0;
+        _QA.eq_ff.s := ''; //LOGK;
+        err_c  := err_c + _QA->eqNot_ff(ZALOG, ZALOG_et, '_F_REESTR.Get_Restricted_reestr2.ZALOG', 'ZALOG_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLIN, BLIN_et, '_F_REESTR.Get_Restricted_reestr2.BLIN', 'BLIN_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLOCK, BLOCK_et, '_F_REESTR.Get_Restricted_reestr2.BLOCK', 'BLOCK_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLOCK_DEATH, BLOCK_DEATH_et, '_F_REESTR.Get_Restricted_reestr2.BLOCK_DEATH', 'BLOCK_DEATH_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLOCK_ON_LOW, BLOCK_ON_LOW_et, '_F_REESTR.Get_Restricted_reestr2.BLOCK_ON_LOW', 'BLOCK_ON_LOW_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLOCK_ON_CLAIM, BLOCK_ON_CLAIM_et, '_F_REESTR.Get_Restricted_reestr2.BLOCK_ON_CLAIM', 'BLOCK_ON_CLAIM_et', LOGK);
+        err_c  := err_c + _QA->eqNot_ff(BLOCK_KD, BLOCK_KD_et, '_F_REESTR.Get_Restricted_reestr2.BLOCK_KD', 'BLOCK_KD_et', LOGK);                                                   
+        result := iif(err_c>0, _QA.FAIL, _QA.PASSED);
+    except
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + ' закончился падением. Exception [' + Exception.text + ']');
+        result := _QA.BROKEN;
+    end;
+end;
+
+// -------------------------------------- Post-condition : Удаляем окружение ----------------------------------------------
+
+if _F_REESTR_AQ.EnvDestroy = 1 then    
+    try
+        _QA->DelContext2(ErrList);
+    except
+        ErrList := ErrList + #13+#10+'Исключение во время удаление окружения.' + Exception.Text;
+    end;
+    if ~isBlank( ErrList ) then
+        ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);
+    end;
+    // _QA->DelSideEffectDocuments(SE53, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE52, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE51, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE42, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE41, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE3, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE21, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    // 
+    // _QA->DelSideEffectDocuments(SE1, ErrList);
+    // if ~isBlank(ErrList) then ListAdd(LOGK, 'QA-System: Тест '+QA_CODE + '.' + ErrList);end;
+    
+    ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], DepoA);
+    ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], DepoA);
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], DepoA_OWNER );    
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], DepoA_OWNER );
+    
+    //ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], ZALOGER1);
+    //ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], ZALOGER1);
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], ZALOGER1 );
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], ZALOGER1 );
+    
+    ExecSQL('Данные', [update OD_CLIENTS set STATE = 2 where ID = :ID], EMI_UK);
+    ExecSQL('Данные', [delete from OD_CLIENTS where ID = :ID], EMI_UK);
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID and SELF_ID<>ID], UK );
+    ExecSQL('Данные', [delete from OD_FACES where SELF_ID = :SELF_ID], UK );    
+end;
+
+// Оформляем результат
+try
+    _QA->ResultRegistration(%tt, QA_CODE, result, logK, tStart, Now);
+except
+    raise('QA-System: Тест '+QA_CODE + ' не получилось исполнить.');
+end;
+%tt._result;

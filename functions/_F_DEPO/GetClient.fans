@@ -1,0 +1,63 @@
+//GetClient(%ID:Int, NUMBER, NAME, TYPE_, SUBTYPE, STATE, ST_NAME, D_OPEN, D_CLOSE, F_NAME, FACE_ID, FACE, SELF_ID,
+// PARENT, PARENT_SUBTYPE, PLACE, ISSUER, O_MAIL_ADR, O_MAIL_MOD, SUBTYPE_NAME,
+// INCOME_MOD, INCOME_ACC, INCOME_REC, DD_NUM, DD_DATE, IS_MANAGER, IS_VOICE, IS_NZ, IS_SOV, MANAGERS,
+// FULL_NAME, IS_BCLIENT, PARENT_FACE, I_MAIL_ADR, I_MAIL_MOD, F_DATE,PARENT_NAME, PARENT_NUMBER, CC_NUM,
+// TRANSIT, CLI_ORG )
+
+if type(%ID) = 'Unknown' then %ID:=clear(0) end;
+MANAGERS := '';
+var  cl_subtype;
+cl_subtype := iif(Application='REESTR', 'REESTR_SUBTYPE', 'DEPO_SUBTYPE');
+if SelectSQL( 'Данные',
+    [select C.NUMBER, C.NAME, C.TYPE_, C.SUBTYPE, C.STATE, ST.NAME, C.D_OPEN, C.D_CLOSE, F.NAME, F.ID, C.FACE, C.SELF_ID,
+           C.PARENT, CP.SUBTYPE, C.PLACE, C.ISSUER, R.O_MAIL_ADR, R.O_MAIL_MOD, R.I_MAIL_ADR, R.I_MAIL_MOD,
+              iif_is(C.TYPE_,'=',1, SA.NAME, S.NAME),
+           R.INCOME_MOD, R.INCOME_ACC, R.INCOME_REC,
+           case when C.DD_DATE is null then CC.DD_NUM  else C.DD_NUM  end,
+           case when C.DD_DATE is null then CC.DD_DATE else C.DD_DATE end,
+           C.IS_MANAGER, C.IS_VOICE, R.IS_NZ, C.IS_SOV, C.IS_BCLIENT, C.LEV, CC.NUMBER, CP.FACE, CP.NAME, CP.NUMBER, C.F_DATE, C.TRANSIT, C.CLI_ORG
+    from OD_CLIENTS C
+    left join OD_CLIENTS CC on CC.ID=C.SELF_ID
+    left join OD_CLIENTS CP on CP.ID=C.PARENT
+    left join OD_CLIENTS_REC R on R.CLIENT=C.SELF_ID and R.E_DATE='01.01.9999'
+    left join OD_SYS_TABS ST on ST.CODE='ACC_STATES' and ST.NUM=C.STATE
+    left join OD_SYS_TABS S  on S.CODE=:ST and S.NUM=C.SUBTYPE
+    left join OD_SYS_TABS SA on SA.CODE='DEPO_ACTTYPE' and SA.NUM=C.SUBTYPE
+    left join OD_FACES F on F.SELF_ID=C.FACE and ((F.B_DATE<=C.F_DATE and F.E_DATE>C.F_DATE) or (F.SELF_ID=F.ID and F.B_DATE>C.F_DATE)
+                or (F.LAST_FLAG=1 and F.E_DATE<=C.F_DATE))
+    where C.ID=:id], cl_subtype, %ID,
+              NUMBER, NAME, TYPE_, SUBTYPE, STATE, ST_NAME, D_OPEN, D_CLOSE, F_NAME, FACE_ID, FACE, SELF_ID,
+              PARENT, PARENT_SUBTYPE, PLACE, ISSUER, O_MAIL_ADR, O_MAIL_MOD, I_MAIL_ADR, I_MAIL_MOD, SUBTYPE_NAME,
+              INCOME_MOD, INCOME_ACC, INCOME_REC, DD_NUM, DD_DATE,
+              IS_MANAGER, IS_VOICE, IS_NZ, IS_SOV, IS_BCLIENT, LEV, CC_NUM, PARENT_FACE,PARENT_NAME, PARENT_NUMBER, F_DATE, TRANSIT, CLI_ORG, 0 )<> 1
+then
+   %ID := PLACE:= TYPE_:= SUBTYPE:= STATE:= FACE_ID:= FACE:= SELF_ID:= PARENT:= ISSUER:=   INCOME_MOD:= INCOME_ACC:= PARENT_FACE:= TRANSIT:= CLI_ORG:= Clear(0);
+   NUMBER:= NAME:= INCOME_REC:= DD_NUM:= ST_NAME:= F_NAME:=PARENT_NAME:=PARENT_NUMBER:= '';
+   D_OPEN:= D_CLOSE:= DD_DATE:= F_DATE:= clear(NOW);
+   PARENT_SUBTYPE:= IS_MANAGER:= IS_VOICE:= IS_NZ:= LEV:= IS_SOV:= IS_BCLIENT:= 0;
+   FULL_NAME := '(Счёт не найден)';
+else
+   var RELATION, A_NAME;
+   for 'Данные' select
+      [select t.NAME, f.NAME
+       from OD_AFFILS a
+        left join OD_FACES f on f.SELF_ID=a.FACE and f.LAST_FLAG=1
+        left join OD_SYS_TABS t on t.CODE='ACC_AFFILS' and t.NUM=a.RELATION
+       where a.CLIENT=:C and a.FACE<>:F and f_SetIn(a.POWER,0)=1  and (a.B_DATE <= :NowDate) and (a.A_END >= :NowDate1) and (a.E_DATE >= :NowDate2)]
+      from %ID, FACE , Date(now),  Date(now), Date(now)  into RELATION, A_NAME
+   do
+      MANAGERS := iif(IsBlank(MANAGERS), '', MANAGERS+'; ')+ RELATION +' '+ A_NAME
+   end;
+   if PARENT_SUBTYPE=0 then //Транзитный счет
+      SUBTYPE_NAME := 'Субсчет депо Транзитного счета'
+   end;
+   FULL_NAME := iif( pos(CC_NUM, NUMBER) <> 1, CC_NUM+'/', '' ) + NUMBER+' - '+NAME;
+end;
+_f_depo.GetClientA.I_MAIL_ADR:=I_MAIL_ADR;
+_f_depo.GetClientA.I_MAIL_MOD:=I_MAIL_MOD;
+_f_depo.GetClientA.IS_BCLIENT:=IS_BCLIENT;
+_f_depo.GetClientA.PARENTFACE:=PARENT_FACE;
+_f_depo.GetClientA.FULL_NAME:=FULL_NAME;
+_f_depo.GetClientA.F_NAME:=F_NAME;
+_f_depo.GetClientA.%ID:=%ID;
+Return(FULL_NAME); //полное наименование счёта (раздела)

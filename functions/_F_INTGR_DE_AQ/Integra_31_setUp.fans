@@ -1,0 +1,299 @@
+// Integra_31_setUp( %CrMoment:datetime; %Objects:int); 
+// В Objects заедут следующие объекты:
+//                   %__tFace_NRD, 
+//                   %__tFace_ISS, 
+//                   %__tShare_SHAREA, 
+//                   %__tShare_SHAREB, 
+//                   %__tFace_FBrok, 
+//                   %__tFace_SnBrok,
+//                   %__tClient_ND, %__tClient_PLACE, %__tClient_PLACE2: int; 
+//                   HOLDERS, NRD_ID, FBROK_ID, SNBROK_ID, SHAREA_ID, SHAREB_ID, CliNOM_ID, PLACE_ID:int; LOGK:List);
+// --------------------------------------------------------------------------------------
+// Создание 31-го окружения
+// Малый круг, без посылания запросов на раскрытие вниз.
+ 
+uses _TYPES;
+var Link, k, x_ISS, 
+    DOC_json, DOC_json2, DOC_json3, DOC_json4, DOC_json5, 
+    ZACH_DOC_ID1, ZACH_DOC_ID2, ZACH_DOC_ID3, ZACH_DOC_ID4, ZACH_DOC_ID5, z, x_bankProp, xx_bankProp, x_meta,
+    AMOUNT_A, AMOUNT_B, AMOUNT_C, AMOUNT_D, AMOUNT_E,
+    HOLDERS, NRD_ID, FBROK_ID, SNBROK_ID, SHAREA_ID, SHAREB_ID, OW1_ID, OW2_ID, OW3_ID, OW4_ID, OW5_ID, CliOW1_ID, CliOW2_ID, CliOW3_ID, CliOW4_ID, CliOW5_ID, PLACE_ID, PLACE_ID2, CliDU_ID;
+var ISS_ID;
+var QA_CODE := 'Integra_31', F_ID, SELF_ID;
+var LBR, RBR, LSQ, RSQ;
+// $meta begin
+var __tFace_ISS     := _TYPES->tFace; OwnerSet(__tFace_ISS,     self.Caller.self );
+var __tFace_FBrok   := _TYPES->tFace; OwnerSet(__tFace_FBrok,   self.Caller.self );
+var __tFace_SnBrok  := _TYPES->tFace; OwnerSet(__tFace_SnBrok,  self.Caller.self );
+var __tClient_OW1   := _TYPES->tClient;  OwnerSet( __tClient_OW1,  self.Caller.self );
+var __tClient_OW2   := _TYPES->tClient;  OwnerSet( __tClient_OW2,  self.Caller.self );
+var __tClient_OW3   := _TYPES->tClient;  OwnerSet( __tClient_OW3,  self.Caller.self );
+var __tClient_OW4   := _TYPES->tClient;  OwnerSet( __tClient_OW4,  self.Caller.self );
+var __tClient_OW5   := _TYPES->tClient;  OwnerSet( __tClient_OW5,  self.Caller.self );
+var __tClient_DU    := _TYPES->tClient;  OwnerSet( __tClient_DU,  self.Caller.self );
+var __tFace_OW1     := _TYPES->tFace;  OwnerSet( __tFace_OW1,  self.Caller.self );
+var __tFace_OW2     := _TYPES->tFace;  OwnerSet( __tFace_OW2,  self.Caller.self );
+var __tFace_OW3     := _TYPES->tFace;  OwnerSet( __tFace_OW3,  self.Caller.self );
+var __tFace_OW4     := _TYPES->tFace; OwnerSet(__tFace_OW4,  self.Caller.self );
+var __tFace_OW5     := _TYPES->tFace; OwnerSet(__tFace_OW5,  self.Caller.self );
+var __tFace_DU      := _TYPES->tFace;  OwnerSet( __tFace_DU,  self.Caller.self );
+var __tClient_PLACE := _TYPES->tClient;  OwnerSet( __tClient_PLACE,  self.Caller.self );
+var __tClient_PLACE2:= _TYPES->tClient;  OwnerSet( __tClient_PLACE2, self.Caller.self );
+var __tShare_SHAREA := _TYPES->tShare; OwnerSet(__tShare_SHAREA, self.Caller.self );
+var __tShare_SHAREB := _TYPES->tShare; OwnerSet(__tShare_SHAREB, self.Caller.self );
+var __tBankProp_item:= _TYPES->tBankProp; OwnerSet(__tBankProp_item, self.Caller.self );
+
+// $meta end
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------   Pre-Condition    ----------------------------------------------------------------
+LOGK := List();
+LBR  := '{'; RBR := '}'; LSQ := '['; RSQ := ']';
+try
+    AMOUNT_A := 100; 
+    AMOUNT_B := 600; 
+    AMOUNT_C := 1200;
+    AMOUNT_D := 30; 
+    AMOUNT_E := 90;
+    try
+        NRD_ID := Extract('Данные', "select SELF_ID from OD_FACES where MNEM='НДЦ' and LAST_FLAG=1");
+        if IsBlank(NRD_ID) then
+           raise("Не найден субъект по мнемонике 'НДЦ'");
+        end; 
+    except
+        raise("Найдено несколько субъектов по мнемонике 'НДЦ'");
+    end;
+    SHAREA_ID := _QA->InsShareByAliasD_t( 'RusOdnrRosFosNitro', %CrMoment, __tFace_ISS, __tShare_SHAREA);
+    SHAREB_ID := _QA->InsShareByAliasD_t( 'RusPrefRosFosNitro', %CrMoment, __tFace_ISS, __tShare_SHAREB);    
+    
+    FBROK_ID  := _QA->InsOrLoadFaceByAlias_t( 'JurRusBrokFirst',  %CrMoment, __tFace_FBrok);
+    SNBROK_ID := _QA->InsOrLoadFaceByAlias_t( 'JurRusBrokSecond', %CrMoment, __tFace_SnBrok);
+
+    // --------------------------------------------------------------------------
+    PLACE_ID  := _QA->InsDepoActByAlias_t( 'TL3332240009', %CrMoment, NRD_ID, clear(0), __tClient_PLACE);
+
+    // --------------------------------------------------------------------------
+    OW1_ID := _QA->InsOrLoadFaceByAlias_t( 'IndvFrgnNeRez-01',  %CrMoment, __tFace_OW1);
+    _QA->Produce_RandomDepo_t(__tClient_OW1, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004001'));
+    __tClient_OW1.@EDIT;
+    __tClient_OW1._FACE      := OW1_ID;
+    __tClient_OW1._D_OPEN    := %CrMoment;
+    __tClient_OW1._NAME      := __tFace_OW1._NAME;
+    __tClient_OW1.@POST;
+    CliOW1_ID := _QA->InsClient_t(__tClient_OW1);
+
+    x_bankProp  := __tFace_OW1.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW1_ID, __tBankProp_item);    
+
+    // --------------------------------------------------------------------------
+    OW2_ID := _QA->InsOrLoadFaceByAlias_t( 'IndvRusRez-01',  %CrMoment, __tFace_OW2);
+    _QA->Produce_RandomDepo_t(__tClient_OW2, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004002'));
+    __tClient_OW2.@EDIT;
+    __tClient_OW2._FACE      := OW2_ID;
+    __tClient_OW2._D_OPEN    := %CrMoment;
+    __tClient_OW2._NAME      := __tFace_OW2._NAME;
+    __tClient_OW2.@POST;
+    CliOW2_ID := _QA->InsClient_t(__tClient_OW2);
+
+    x_bankProp  := __tFace_OW2.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW2_ID, __tBankProp_item);    
+    
+    // --------------------------------------------------------------------------    
+    OW3_ID    := _QA->InsOrLoadFaceByAlias_t( 'JurRusVainstein_ext', %CrMoment, __tFace_OW3);    
+    _QA->Produce_RandomDepo_t(__tClient_OW3, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004003'));
+    __tClient_OW3.@EDIT;
+    __tClient_OW3._FACE      := OW3_ID;
+    __tClient_OW3._D_OPEN    := %CrMoment;
+    __tClient_OW3._NAME      := __tFace_OW3._NAME;
+    __tClient_OW3.@POST;
+    CliOW3_ID := _QA->InsClient_t(__tClient_OW3);
+
+    x_bankProp  := __tFace_OW3.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW3_ID, __tBankProp_item);    
+
+    // --------------------------------------------------------------------------    
+    OW4_ID    := _QA->InsOrLoadFaceByAlias_t( 'JurFrgnTvindor', %CrMoment, __tFace_OW4);    
+    _QA->Produce_RandomDepo_t(__tClient_OW4, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004004'));
+    __tClient_OW4.@EDIT;
+    __tClient_OW4._FACE      := OW4_ID;
+    __tClient_OW4._D_OPEN    := %CrMoment;
+    __tClient_OW4._NAME      := __tFace_OW4._NAME;
+    __tClient_OW4.@POST;
+    CliOW4_ID := _QA->InsClient_t(__tClient_OW4);
+
+    x_bankProp  := __tFace_OW4.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW4_ID, __tBankProp_item);    
+    
+    // --------------------------------------------------------------------------    
+    OW5_ID    := _QA->InsOrLoadFaceByAlias_t( 'JurFrgnTophaveLtd', %CrMoment, __tFace_OW5);    
+    _QA->Produce_RandomDepo_t(__tClient_OW5, List('TYPE_=2', 'SUBTYPE=1', 'NUMBER=В00004010'));
+    __tClient_OW5.@EDIT;
+    __tClient_OW5._FACE      := OW5_ID;
+    __tClient_OW5._D_OPEN    := %CrMoment;
+    __tClient_OW5._NAME      := __tFace_OW5._NAME;
+    __tClient_OW5.@POST;
+    CliOW5_ID := _QA->InsClient_t(__tClient_OW5);
+
+    x_bankProp  := __tFace_OW5.___tBankProp_bProp;    
+    _QA->AddBankPropForClient( now, x_bankProp.___bs_ID, CliOW5_ID, __tBankProp_item);    
+
+   
+    // --------------------------------------------------------------------------
+    DOC_json := [ 
+        {
+        "AMOUNT"       : ]+str(AMOUNT_A)+[,
+        "PLACE"        : ] + str(PLACE_ID) + [,
+        "B_TYPE"       : "Передаточное распоряжение" ,
+        "B_DATE"       : "] + str(date(%CrMoment)) + ["  ,
+        "SHARE"        : ] + str(SHAREA_ID)+ [,
+        "B_NUM"        : "б/н"  ,
+        "DEPO"         : ] + str(CliOW1_ID) + [,
+        "D_NUM"        : "98015",
+        "K_NUM"        : "98040",
+        "COMMENT"      : "Формирование баланса на счете ] + __tClient_OW1._NUMBER + [",
+        "DD_DATE"      : "] + str(date(%CrMoment)) + ["  ,
+        "DD_NUM"       : "б/н",
+        "DD_TYPE"      : "Клиентское",
+        "MARKET"       : null,
+        "FROM_FACE"    : ]+str(MyFace)+[,
+        "WIR_DATE"     : "]+ str(%CrMoment) +[",         
+        "REJECT_REASON": "",
+        "REG_DATE"     : "] + str(date(%CrMoment)) + [",
+        "CONDITION"    : null
+        } ];
+        //"NOTIFY_DATE": "] + str(%CrMoment) + [",
+        // --------------------------------------------------------------------------
+    ZACH_DOC_ID1 := _QA->Make_OP_INV_ZACH_json(AnsiToUTF8(DOC_json), %CrMoment, 'START', clear(0));
+    z            := _F_DOC->Exec_Doc_Dir_BySysName( ZACH_DOC_ID1, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Инвентарную операцию. Код ошибки:' + str(z));end;
+
+    DOC_json2 := [ 
+        {
+        "AMOUNT"       : ]+str(AMOUNT_B)+[,
+        "PLACE"        : ] + str(PLACE_ID) + [,
+        "B_TYPE"       : "Передаточное распоряжение" ,
+        "B_DATE"       : "] + str(date(%CrMoment)) + ["  ,
+        "SHARE"        : ] + str(SHAREA_ID)+ [,
+        "B_NUM"        : "б/н"  ,
+        "DEPO"         : ] + str(CliOW2_ID) + [,
+        "D_NUM"        : "98015",
+        "K_NUM"        : "98040",
+        "COMMENT"      : "Формирование баланса на счете ] + __tClient_OW2._NUMBER + [",
+        "DD_DATE"      : "] + str(date(%CrMoment)) + ["  ,
+        "DD_NUM"       : "б/н",
+        "DD_TYPE"      : "Клиентское",
+        "MARKET"       : null,
+        "FROM_FACE"    : ]+str(MyFace)+[,
+        "WIR_DATE"     : "]+ str(%CrMoment) +[",         
+        "REJECT_REASON": "",
+        "REG_DATE"     : "] + str(date(%CrMoment)) + [",
+        "CONDITION"    : null
+        } ];
+        //"NOTIFY_DATE": "] + str(%CrMoment) + [",
+    ZACH_DOC_ID2 := _QA->Make_OP_INV_ZACH_json(AnsiToUTF8(DOC_json2), %CrMoment, 'START', clear(0));
+    z            := _F_DOC->Exec_Doc_Dir_BySysName( ZACH_DOC_ID2, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Инвентарную операцию. Код ошибки:' + str(z));end;
+
+    // --------------------------------------------------------------------------
+    DOC_json3 := [ 
+        {
+        "AMOUNT"       : ]+str(AMOUNT_C)+[,
+        "PLACE"        : ] + str(PLACE_ID) + [,
+        "B_TYPE"       : "Передаточное распоряжение" ,
+        "B_DATE"       : "] + str(date(%CrMoment)) + ["  ,
+        "SHARE"        : ] + str(SHAREA_ID)+ [,
+        "B_NUM"        : "б/н"  ,
+        "DEPO"         : ] + str(CliOW3_ID) + [,
+        "D_NUM"        : "98015",
+        "K_NUM"        : "98040",
+        "COMMENT"      : "Формирование баланса на счете ] + __tClient_OW3._NUMBER + [",
+        "DD_DATE"      : "] + str(date(%CrMoment)) + ["  ,
+        "DD_NUM"       : "б/н",
+        "DD_TYPE"      : "Клиентское",
+        "MARKET"       : null,
+        "FROM_FACE"    : ]+str(MyFace)+[,
+        "WIR_DATE"     : "]+ str(%CrMoment) +[",         
+        "REJECT_REASON": "",
+        "REG_DATE"     : "] + str(date(%CrMoment)) + [",
+        "CONDITION"    : null
+        } ];
+        //"NOTIFY_DATE": "] + str(%CrMoment) + [",        
+    ZACH_DOC_ID3 := _QA->Make_OP_INV_ZACH_json(AnsiToUTF8(DOC_json3), %CrMoment, 'START', clear(0));
+    z            := _F_DOC->Exec_Doc_Dir_BySysName( ZACH_DOC_ID3, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Инвентарную операцию. Код ошибки:' + str(z));end;
+
+    // --------------------------------------------------------------------------
+    DOC_json4 := [ 
+        {
+        "AMOUNT"       : ]+str(AMOUNT_D)+[,
+        "PLACE"        : ] + str(PLACE_ID) + [,
+        "B_TYPE"       : "Передаточное распоряжение" ,
+        "B_DATE"       : "] + str(date(%CrMoment)) + ["  ,
+        "SHARE"        : ] + str(SHAREA_ID)+ [,
+        "B_NUM"        : "б/н"  ,
+        "DEPO"         : ] + str(CliOW4_ID) + [,
+        "D_NUM"        : "98015",
+        "K_NUM"        : "98040",
+        "COMMENT"      : "Формирование баланса на счете ] + __tClient_OW4._NUMBER + [",
+        "DD_DATE"      : "] + str(date(%CrMoment)) + ["  ,
+        "DD_NUM"       : "б/н",
+        "DD_TYPE"      : "Клиентское",
+        "MARKET"       : null,
+        "FROM_FACE"    : ]+str(MyFace)+[,
+        "WIR_DATE"     : "]+ str(%CrMoment) +[",         
+        "REJECT_REASON": "",
+        "REG_DATE"     : "] + str(date(%CrMoment)) + [",
+        "CONDITION"    : null
+        } ];
+        //"NOTIFY_DATE": "] + str(%CrMoment) + [",        
+    ZACH_DOC_ID4 := _QA->Make_OP_INV_ZACH_json(AnsiToUTF8(DOC_json4), %CrMoment, 'START', clear(0));
+    z            := _F_DOC->Exec_Doc_Dir_BySysName( ZACH_DOC_ID4, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Инвентарную операцию. Код ошибки:' + str(z));end;
+
+    // --------------------------------------------------------------------------
+    DOC_json5 := [ 
+        {
+        "AMOUNT"       : ]+str(AMOUNT_E)+[,
+        "PLACE"        : ] + str(PLACE_ID) + [,
+        "B_TYPE"       : "Передаточное распоряжение" ,
+        "B_DATE"       : "] + str(date(%CrMoment)) + ["  ,
+        "SHARE"        : ] + str(SHAREB_ID)+ [,
+        "B_NUM"        : "б/н"  ,
+        "DEPO"         : ] + str(CliOW5_ID) + [,
+        "D_NUM"        : "98015",
+        "K_NUM"        : "98040",
+        "COMMENT"      : "Формирование баланса на счете ] + __tClient_OW5._NUMBER + [",
+        "DD_DATE"      : "] + str(date(%CrMoment)) + ["  ,
+        "DD_NUM"       : "б/н",
+        "DD_TYPE"      : "Клиентское",
+        "MARKET"       : null,
+        "FROM_FACE"    : ]+str(MyFace)+[,
+        "WIR_DATE"     : "]+ str(%CrMoment) +[",         
+        "REJECT_REASON": "",
+        "REG_DATE"     : "] + str(date(%CrMoment)) + [",
+        "CONDITION"    : null
+        } ];
+        //"NOTIFY_DATE": "] + str(%CrMoment) + [",        
+    ZACH_DOC_ID5 := _QA->Make_OP_INV_ZACH_json(AnsiToUTF8(DOC_json5), %CrMoment, 'START', clear(0));
+    z            := _F_DOC->Exec_Doc_Dir_BySysName( ZACH_DOC_ID5, clear(0), 'PROCESS', 1{%mute - гасить});
+    if z<>0 then raise('Не удалось обработать Инвентарную операцию. Код ошибки:' + str(z));end;
+     
+    GS_SET(%Objects,'__tFace_ISS'     ,__tFace_ISS     );    
+    GS_SET(%Objects,'__tFace_FBrok'   ,__tFace_FBrok   );
+    GS_SET(%Objects,'__tFace_SnBrok'  ,__tFace_SnBrok  );
+    GS_SET(%Objects,'__tClient_OW1'   ,__tClient_OW1   );
+    GS_SET(%Objects,'__tClient_OW2'   ,__tClient_OW2   );
+    GS_SET(%Objects,'__tClient_OW3'   ,__tClient_OW3   );
+    GS_SET(%Objects,'__tClient_OW4'   ,__tClient_OW4   );
+    GS_SET(%Objects,'__tClient_OW5'   ,__tClient_OW5   );
+    GS_SET(%Objects,'__tClient_PLACE' ,__tClient_PLACE );
+    GS_SET(%Objects,'__tShare_SHAREA' ,__tShare_SHAREA );
+    GS_SET(%Objects,'__tShare_SHAREB' ,__tShare_SHAREB );
+    GS_SET(%Objects,'AMOUNT_A'        ,  AMOUNT_A      );
+    GS_SET(%Objects,'AMOUNT_B'        ,  AMOUNT_B      );    
+    GS_SET(%Objects,'AMOUNT_C'        ,  AMOUNT_C      );    
+    GS_SET(%Objects,'AMOUNT_D'        ,  AMOUNT_D      );    
+    GS_SET(%Objects,'AMOUNT_E'        ,  AMOUNT_E      );    
+except
+    ListAdd(LOGK, 'QA-System: В тесте '+QA_CODE + ' не получилось создать окружение')
+end;

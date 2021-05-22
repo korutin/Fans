@@ -7,7 +7,9 @@
 // C_AccFis, D_AccFis, C_AccUri, D_AccUri, C_AccDU, D_AccDU, C_AccND, D_AccND, C_AccNDCD, D_AccNDCD,
 // C_AccDep, D_AccDep, C_AccKaz, D_AccKaz, C_AccNon, D_AccNon :int; A_AccDep, A_AccKaz, A_AccNon, A_AccIss, A_AccDop, A_AccALL :float 
 // A_ObrThirdPart, A_ObrDeath, A_ObrBlin, A_ObrLawBased, A_ObrZalog, A_ObrWhole )
-
+//---------------------------------------------------------------------------------------------------------------------------------------
+// Таблица TMP_INVESTMENT используется как временное хранилище для преобразованных данных. Поле APPL_ID группирует данные по смыслу.
+// APPL_ID+7 - используется для передачи в Excel строк попавших под группировку
 //Получение данных для Отчёта о владельцах паёв ПИФ из Fansy-REESTR
 //tva 2.2016 / eks 
 uses _QA;
@@ -20,18 +22,19 @@ var APPL_ID_1, CONTR_1, CHAIN_1, DEPOSIT_1, IS_RUR_1, B_SYS_NAME_1, LEVEL_1, AMO
 
 var ZDL, ZDR, BLOCK, BEN_ZDR, BLOCK_5, BLOCK_CA, BLOCK_CL, ZALOG, BLIN, AMOUNT :float; 
 var BLOCK_DEATH, BLOCK_ON_LOW, BLOCK_ON_CLAIM, BLOCK_KD : float;
-var DogList, Obr_List, item, OSN, REASON, DESCR, TYPE_, k;
+var DogList, Obr_List, item, OSN, REASON, DESCR, TYPE_, k, colShlop, first;
     
-var TT, TT1, TT3, T_dbg;   
+var TT, TT1, TT3, T_dbg, TS;
 // F_REQ_C            - строка идентификации физика по документу <ТипДокумента>+<СерияДокумента>+<НомерДокумента>+<ДатаВыдачиДокумента>
 // S_OGRN             - строка с информацией о документе для отображаемой части отчете. 
 // TS_OGRN или TS_INN - Для Юриков служит еще и для идентификации.
 // NORM_NAME          - Нормализованное имя - для идентификации (в основном нужно для внешних Инвест.фондов к которым применяется NormalizeJurName
-TT    :=Table(I_OWN str, S_NAME str, NORM_NAME str, S_TYPE str, S_ADR str, S_STATE str, DIG_STATE str, S_OGRN str, TS_OGRN str, TS_INN str, F_REQ_C str, S_AMOUNT str);
+TT :=Table(I_OWN str, S_NAME str, NORM_NAME str, S_TYPE str, S_ADR str, S_STATE str, DIG_STATE str, S_OGRN str, TS_OGRN str, TS_INN str, F_REQ_C str, S_AMOUNT str);
+TS :=Table(I_OWN str, S_NAME str, NORM_NAME str, S_TYPE str, S_ADR str, S_STATE str, DIG_STATE str, S_OGRN str, TS_OGRN str, TS_INN str, F_REQ_C str, S_AMOUNT str, ID int);   // Таблица для хранения строк подвергнувшихся группировке на листе 9 (ID - номер группы в которую попала строка.)
 
-TT1   :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
-TT3   :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
-T_dbg :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
+TT1    :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
+TT3    :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
+T_dbg  :=Table(APPL_ID int, CHAIN int, DEPOSIT int, VALUE_ID int, C_NAME str, I_NAME str,   INVESTMENT str, RATE_COMMENT str, LEVEL_ int, AMOUNT float);
 
 // ------------------------------------------------------
 function 'IsEqual(%S1,%S2: str)' do
@@ -166,9 +169,7 @@ end;
 //       Для отождествления двух записей в TMP_INVESTMENT будем брать  
 // ====================================================================================================================
 // С третьей закладки берём кол-во паёв у физиков и юриков, раскрытых в операции "Формирование списка лиц"
-
-   ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+2 );
-   ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+3 );
+   ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID>=:APPL_ID and APPL_ID<=:APPL_ID', APPL_ID, APPL_ID);
    ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where MAKE_DATE < f_AddDate(GETDATE(),-1)');
    for 'Данные' select
       [select f.ID, cl.SUBTYPE, f.NAME, f.S_TYPE, f.OGRN as OGRN, f.INN, f.DOC_SER, f.DOC_NUM, 
@@ -209,7 +210,7 @@ end;
       TU_OGRN_C := Q._OGRN;      // Это для анализа идентичности строк: либо ОГРН, либо ПДУ, либо Сведения о регистрации (для иностранных ЮЛ)
       TU_INN_C  := Q._INN;       // Это для анализа идентичности строк: либо ИНН, либо TIN (для иностранных ЮЛ)
       TF_REQ    := Q._F_REQ;
-      NORM_NAME := Q._NAME;
+      NORM_NAME := NormStr(Q._NAME);
       flag      := false;
       n10       := 0;
       ////////////////////////////////////////////////////////////////////
@@ -222,7 +223,7 @@ end;
           // Делаем экспресс-тест на принадлежность юр.лица к классу инвест-фондов (причем иностранные и отечественные фонды не различаем - сам так решил)
           if isInvestFund(Q._NAME) then 
               // Если зашли сюда значит владелец из списка обладает внешними признаками инвестиционного фонда.
-              // Осуществляем поиск в справочнике Юридических лиц лица с идентичным сверточным наименованием
+              // Осуществляем поиск в справочнике Юридических лиц лица с идентичным сверточным наименованием (по условиям игры Регистратор должен заводить в справочник Юр.лиц фонды, которые прилетели ему в раскрытии)
               SvName := _f_report->NormalizeJurName(Q._NAME);                //Получить свёртку наименования владельца обрабатываемого в данный момент
               for 'Данные' select 
                   [select  f.ID, f.NAME, pf.NUM_LIC
@@ -287,21 +288,19 @@ end;
       //DEPOSIT - f.ID, IS_RUR  - cl.SUBTYPE, BAL_SYS_NAME - DIG_STATE, LEVEL_ - f.S_TYPE, AMOUNT -AMOUNT
       //Одну запись делаем в слой APPL_ID+2 для синтетических значений по видам счетов.
       ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,   CONTR,  DEPOSIT, IS_RUR,     B_SYS_NAME,   LEVEL_,   AMOUNT,    C_NAME,   I_NAME,     INVESTMENT,   RATE_COMMENT,  FULL_INVEST)
-                                              values (:APPL_ID,  :CONTR, :DEPOSIT,:IS_RUR,    :B_SYS_NAME,  :LEVEL,   :AMOUNT,   :C_NAME,  :I_NAME,    :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)], 
-                                                       APPL_ID+2, GI,     Q._ID,   Q._SUBTYPE, Q._DIG_STATE, ENT_TYPE, Q._AMOUNT, Q._NAME,  TU_OGRN_C,  TU_INN_C,     Q._F_REQ_C,    NORM_NAME);
+                                                     values (:APPL_ID,  :CONTR, :DEPOSIT,:IS_RUR,    :B_SYS_NAME,  :LEVEL,   :AMOUNT,   :C_NAME,  :I_NAME,    :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)], 
+                                                              APPL_ID+2, GI,     Q._ID,   Q._SUBTYPE, Q._DIG_STATE, ENT_TYPE, Q._AMOUNT, Q._NAME,  TU_OGRN_C,  TU_INN_C,     Q._F_REQ_C,    NORM_NAME);
 
       //Вторую запись делаем в слой APPL_ID+3 для синтетических значений поголовно.
       ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,   CONTR,  DEPOSIT, IS_RUR,     B_SYS_NAME,   LEVEL_,   AMOUNT,    C_NAME,  I_NAME,    INVESTMENT,   RATE_COMMENT,  FULL_INVEST)
-                                              VALUES (:APPL_ID,  :CONTR, :DEPOSIT,:IS_RUR,    :B_SYS_NAME,  :LEVEL,   :AMOUNT,   :C_NAME, :I_NAME,   :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)], 
-                                                       APPL_ID+3, GI,     Q._ID,   Q._SUBTYPE, Q._DIG_STATE, ENT_TYPE, Q._AMOUNT, Q._NAME, TU_OGRN_C, TU_INN_C,     Q._F_REQ_C,    NORM_NAME);
+                                                     VALUES (:APPL_ID,  :CONTR, :DEPOSIT,:IS_RUR,    :B_SYS_NAME,  :LEVEL,   :AMOUNT,   :C_NAME, :I_NAME,   :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)], 
+                                                              APPL_ID+3, GI,     Q._ID,   Q._SUBTYPE, Q._DIG_STATE, ENT_TYPE, Q._AMOUNT, Q._NAME, TU_OGRN_C, TU_INN_C,     Q._F_REQ_C,    NORM_NAME);
       
    // TVA не знаю как на 3-й закладке в EXT_FACES отличить инв.фонды от другиз юр.лиц. Допустим, что инв.фондов там нет.
    end;
 
 //=======================================================================================================
 // Со второй закладки кол-во паёв на нераскрываемых ДУ, считая что FACE у них является учредителем
-   ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+1 );
-   //ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where MAKE_DATE < f_AddDate(GETDATE(),-1)');
    for 'Данные' select
       [select case when p.FACE is null then f.S_TYPE else 2/*фонд*/ end as S_TYPE, 
               case when f.S_TYPE=0 then f.NAME else u.FULL_NAME end as NAME,
@@ -346,6 +345,7 @@ end;
        TU_OGRN_C := Q._OGRN;      // Это для анализа идентичности строк: либо ОГРН, либо ПДУ, либо Сведения о регистрации (для иностранных ЮЛ)
        TU_INN_C  := Q._INN;       // Это для анализа идентичности строк: либо ИНН, либо TIN (для иностранных ЮЛ)    
        ENT_TYPE  := Q._S_TYPE;
+       NORM_NAME := NormStr(Q._NAME);
        n10       := 0;
        if (ENT_TYPE = 1) then
            //  Разбираем юридическое лицо
@@ -376,18 +376,16 @@ end;
        end;
 
       //if not IsNull(%T) then
-         TableInsert(TT, list('I_OWN='+Q._I_OWN, 'S_NAME='+Q._NAME, 'NORM_NAME='+Q._NAME, 'S_TYPE='+Q._S_TYPE, 'S_ADR='+Q._ADR, 'S_STATE='+Q._STATE, 'DIG_STATE='+Q._DIG_STATE,
+         TableInsert(TT, list('I_OWN='+Q._I_OWN, 'S_NAME='+Q._NAME, 'NORM_NAME='+NORM_NAME, 'S_TYPE='+Q._S_TYPE, 'S_ADR='+Q._ADR, 'S_STATE='+Q._STATE, 'DIG_STATE='+Q._DIG_STATE,
                               'S_OGRN='+iif(Q._S_TYPE=0, TF_REQ, TU_REQ), 'TS_OGRN='+TU_OGRN_C, 'TS_INN='+TU_INN_C, 'F_REQ_C='+Q._F_REQ_C, 'S_AMOUNT='+str(Q._AMOUNT)));
       //end;
       //BAL_ACC ->MUST_OPEN, AMOUNT->AMOUNT_ALL, CHAIN->DEPO_2, LEVEL_ -> S_TYPE, FACE
-      ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,   CONTR,    BAL_ACC,      AMOUNT,        CHAIN,     LEVEL_,    C_NAME,  I_NAME,    INVESTMENT,  RATE_COMMENT,  FULL_INVEST)
-                                              VALUES (:APPL_ID,  :CONTR,   :BAL_ACC,     :AMOUNT,       :CHAIN,    :LEVEL_,   :C_NAME, :I_NAME,   :INVESTMENT, :RATE_COMMENT, :FULL_INVEST )], 
-                                                       APPL_ID+1, GI,       Q._MUST_OPEN, Q._AMOUNT_ALL, Q._DEPO_2, Q._S_TYPE, Q._NAME, TU_OGRN_C, TU_INN_C,    TF_REQ_C,      Q._NAME);
+      ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,   CONTR,    BAL_ACC,      AMOUNT,        CHAIN,     B_SYS_NAME,   LEVEL_,    C_NAME,  I_NAME,    INVESTMENT,  RATE_COMMENT,  FULL_INVEST)
+                                                     VALUES (:APPL_ID,  :CONTR,   :BAL_ACC,     :AMOUNT,       :CHAIN,    :B_SYS_NAME,  :LEVEL_,   :C_NAME, :I_NAME,   :INVESTMENT, :RATE_COMMENT, :FULL_INVEST )], 
+                                                              APPL_ID+1, GI,       Q._MUST_OPEN, Q._AMOUNT_ALL, Q._DEPO_2, Q._DIG_STATE, Q._S_TYPE, Q._NAME, TU_OGRN_C, TU_INN_C,    TF_REQ_C,      NORM_NAME{Q._NAME});
    end;
-
 //=======================================================================================================
 // С первой закладки берём все счета, на которых есть паи
-ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID );
 
 for 'Данные' select [ 
     select f.ID, f.SELF_ID, f_AsInteger(v3.VAL) as DEPO, f_AsFloat(v2.VAL) as AMOUNT, af.PERCENT_, f.S_TYPE, c.SUBTYPE , u.OGRN, f.INN, f.DOC_SER, f.DOC_NUM, 
@@ -400,7 +398,7 @@ for 'Данные' select [
            /*Added 11.07.2018*/
            case when f_IsBlank(f.INN)=0 then 'FN_' || f.INN
                 when f_IsBlank(u.OGRN)=0 then 'FG_' || u.OGRN
-                when f_IsBlank(f.DOC_NUM)=0 then 'FR_' || f.DOC_NUM
+                when f_IsBlank(f.DOC_NUM)=0 then 'FR_' || f_Replace(f.DOC_NUM, '.','_')
                 when f_IsBlank(f.MNEM)=0 then 'FM_' || f.mnem
                 else 'F_' || f_IntToStr(f.SELF_ID) end as I_OWN           ,
            case when f.HOME_ADR is not null then f.HOME_ADR when f.MAIL_ADR is not null then f.MAIL_ADR else '' end as ADR
@@ -431,6 +429,7 @@ do
     TU_OGRN_C := Q._OGRN;      // Это для анализа идентичности строк: либо ОГРН, либо ПДУ, либо Сведения о регистрации (для иностранных ЮЛ)
     TU_INN_C  := Q._INN;       // Это для анализа идентичности строк: либо ИНН, либо TIN (для иностранных ЮЛ)    
     ENT_TYPE  := Q._S_TYPE;
+    NORM_NAME := NormStr(Q._NAME);
     n10       := 0;
     AMNT      := (Q._AMOUNT*Q._PERCENT_) / 100;
     if (ENT_TYPE = 1) then
@@ -449,8 +448,8 @@ do
         end;        
         //TU_REQ := TU_OGRN_C + iif(not isBlank(TU_OGRN_C) and not isBlank(TU_INN_C),'/','')+TU_INN_C;
     elsif (ENT_TYPE = 0) then
-        // Разбираем ИП или простой смертный физик
-        // Если есть запись о деятельности "Предпринимательская деятельность"(11) с непустым NUM_LIC, то это ИП. Если NUM_LIC пусто мы его ИП не считаем
+        // Разбираем кто перед нами: ИП или простой смертный физик
+        // Если есть запись о деятельности "Предпринимательская деятельность"(11) с непустым NUM_LIC, то это ИП. Если NUM_LIC пусто мы его за ИП не считаем
         NUM_LIC := '';
         SelectSQL('Данные',[Select NUM_LIC from OD_P_FACES pf 
                             Where pf.face = :f and pf.dial_mode = 11 and f_isBlank(pf.NUM_LIC)=0 order by pf.BEG_LIC asc
@@ -462,22 +461,17 @@ do
     end;
         
     //Одну запись делаем в слой APPL_ID для синтетических значений по видам счетов.
-    ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,  CONTR,  CHAIN,   AMOUNT,    C_NAME,  LEVEL_,     I_NAME,    INVESTMENT,   RATE_COMMENT,  FULL_INVEST)
-                                            values (:APPL_ID, :CONTR, :CHAIN,  :AMOUNT,   :C_NAME, :LEVEL_,    :I_NAME,   :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)],
-                                                     APPL_ID,  GI ,    Q._DEPO, AMNT,      Q._NAME, Q._S_TYPE,  TU_OGRN_C, TU_INN_C,     TF_REQ_C,      Q._NAME);
-
+    ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,  CONTR,  CHAIN,    DEPOSIT,  IS_RUR,     B_SYS_NAME,   AMOUNT,    C_NAME,  LEVEL_,     I_NAME,    INVESTMENT,   RATE_COMMENT,  FULL_INVEST)
+                                                   values (:APPL_ID, :CONTR, :CHAIN,   :DEPOSIT, :IS_RUR,    :B_SYS_NAME,  :AMOUNT,   :C_NAME, :LEVEL_,    :I_NAME,   :INVESTMENT,  :RATE_COMMENT, :FULL_INVEST)],
+                                                            APPL_ID,  GI ,    Q._DEPO,  Q._ID,    Q._SUBTYPE, Q._DIG_STATE, AMNT,      Q._NAME, Q._S_TYPE,  TU_OGRN_C, TU_INN_C,     TF_REQ_C,      NORM_NAME{Q._NAME});
     //Вторую запись с APPL_ID+3 делаем в отдельный слой для синтетических значений поголовно (пишем только если счет владельца).
     if (Q._SUBTYPE=1) then
         ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT( APPL_ID,   CONTR,  CHAIN,   DEPOSIT,  IS_RUR,     B_SYS_NAME,   LEVEL_,    AMOUNT,    C_NAME,   I_NAME,    INVESTMENT,  RATE_COMMENT, FULL_INVEST)
-                                                VALUES(:APPL_ID,  :CONTR, :CHAIN,  :DEPOSIT, :IS_RUR,    :B_SYS_NAME,  :LEVEL,    :AMOUNT,   :C_NAME,  :I_NAME,   :INVESTMENT, :RATE_COMMENT,:FULL_INVEST)], 
-                                                        APPL_ID+3, GI,     Q._DEPO, Q._ID,    Q._SUBTYPE, Q._DIG_STATE, Q._S_TYPE, AMNT,      Q._NAME,  TU_OGRN_C, TU_INN_C,    TF_REQ_C,     Q._NAME); 
-        
+                                                       VALUES(:APPL_ID,  :CONTR, :CHAIN,  :DEPOSIT, :IS_RUR,    :B_SYS_NAME,  :LEVEL,    :AMOUNT,   :C_NAME,  :I_NAME,   :INVESTMENT, :RATE_COMMENT,:FULL_INVEST)], 
+                                                               APPL_ID+3, GI,     Q._DEPO, Q._ID,    Q._SUBTYPE, Q._DIG_STATE, Q._S_TYPE, AMNT,      Q._NAME,  TU_OGRN_C, TU_INN_C,    TF_REQ_C,     NORM_NAME{Q._NAME});        
         // =========== перенесено из нижнего цикла по первой закладке 11.07.2018
-        //TableInsert(TT, list('I_OWN='+Q._I_OWN, 'S_NAME='+Q._NAME, 'S_TYPE='+Q._S_TYPE, 'S_ADR='+Q._ADR, 'S_STATE='+Q._STATE, 'DIG_STATE='+Q._DIG_STATE,
-        //                     'S_OGRN='+iif(Q._S_TYPE=0, TF_REQ, Q._U_REQ), 'F_REQ_C='+TF_REQ_C, 'S_AMOUNT='+str(Q._AMOUNT)));                                                        
-        TableInsert(TT, list('I_OWN='+Q._I_OWN, 'S_NAME='+Q._NAME, 'NORM_NAME='+Q._NAME, 'S_TYPE='+Q._S_TYPE, 'S_ADR='+Q._ADR, 'S_STATE='+Q._STATE, 'DIG_STATE='+Q._DIG_STATE,
-                             'S_OGRN='+iif(Q._S_TYPE=0, TF_REQ, TU_REQ), 'TS_OGRN='+TU_OGRN_C, 'TS_INN='+TU_INN_C, 'F_REQ_C='+TF_REQ_C, 'S_AMOUNT='+str(AMNT)));
-                             
+        TableInsert(TT, list('I_OWN='+Q._I_OWN, 'S_NAME='+Q._NAME, 'NORM_NAME='+NORM_NAME, 'S_TYPE='+Q._S_TYPE, 'S_ADR='+Q._ADR, 'S_STATE='+Q._STATE, 'DIG_STATE='+Q._DIG_STATE,
+                             'S_OGRN='+iif(Q._S_TYPE=0, TF_REQ, TU_REQ), 'TS_OGRN='+TU_OGRN_C, 'TS_INN='+TU_INN_C, 'F_REQ_C='+TF_REQ_C, 'S_AMOUNT='+str(AMNT)));                             
     end;
 end;
 //////////////////////////////////////////////////////////////////////////////////////
@@ -492,9 +486,6 @@ end;
 // INVESTMENT   = F_REQ
 // CHAIN        = DEPO
 
-ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+4 );
-ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+5 );
-ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+6 );
 TT3:=TableFromSQL('Данные', [SELECT APPL_ID, CONTR, CHAIN, DEPOSIT, IS_RUR, B_SYS_NAME, LEVEL_, AMOUNT, C_NAME, I_NAME, INVESTMENT, RATE_COMMENT
                              FROM TMP_INVESTMENT
                              WHERE APPL_ID=:APPL_ID], APPL_ID+3);
@@ -519,7 +510,7 @@ repeat
         z:=IsEqual(RATE_COMMENT_1{S_F_REQ_C},TableFieldVal(TT3, 'RATE_COMMENT'))
     end;
        
-    if ((IsEqual(C_NAME_1{S_NAME},TableFieldVal(TT3, 'C_NAME')) and z) and ~TT3.@EOF) then
+    if ((((({DIG_STATE}B_SYS_NAME_1 = '643' and {S_TYPE}LEVEL_1 = 1) or (LEVEL_1 = 0)) and IsEqual(C_NAME_1{S_NAME},TableFieldVal(TT3, 'C_NAME')) or ( B_SYS_NAME_1<>'643')) and z) and ~TT3.@EOF) then
         AMOUNT_1:=AMOUNT_1+float(TableFieldVal(TT3, 'AMOUNT'));
     else
         //TableInsert(T11, List('I_OWN='+str(I_OWN),'S_NAME='+str(S_NAME),'S_TYPE='+str(S_TYPE),'S_ADR='+str(S_ADR),'S_STATE='+str(S_STATE),'DIG_STATE='+str(DIG_STATE),
@@ -561,7 +552,7 @@ repeat
     //     AMOUNT_1:=AMOUNT_1+float(TableFieldVal(TT3, 'AMOUNT'));
     if (
         (
-         ((({DIG_STATE}B_SYS_NAME_1 = '643' and {S_TYPE}LEVEL_1 = 1) or (LEVEL_1 = 0)) and IsEqual(C_NAME_1{S_NAME},TableFieldVal(TT3, 'C_NAME')) or ( C_NAME_1<>643)) and z and {SUBTYPE}IS_RUR_1=TableFieldVal(TT3, 'IS_RUR')
+         ((({DIG_STATE}B_SYS_NAME_1 = '643' and {S_TYPE}LEVEL_1 = 1) or (LEVEL_1 = 0)) and IsEqual(C_NAME_1{S_NAME},TableFieldVal(TT3, 'C_NAME')) or ( B_SYS_NAME_1<>'643')) and z and {SUBTYPE}IS_RUR_1=TableFieldVal(TT3, 'IS_RUR')
         ) and ~TT3.@EOF
        ) then AMOUNT_1:=AMOUNT_1+float(TableFieldVal(TT3, 'AMOUNT'))    
     else
@@ -806,53 +797,15 @@ do
     
     A_ObrWhole     := A_ObrWhole + _F_REESTR->Get_Restricted_reestr2( q._CHAIN, SHARE, R_DATE, 
                                                         ZALOG, BLIN, BLOCK, BLOCK_DEATH, BLOCK_ON_LOW, BLOCK_ON_CLAIM, BLOCK_KD, Obr_List);
-    A_ObrBlin     := A_ObrBlin  + BLIN;
-    A_ObrDeath    := A_ObrDeath + BLOCK_DEATH;
-    A_ObrLawBased := A_ObrLawBased + BLOCK_ON_LOW;
-    A_ObrZalog    := A_ObrZalog + ZALOG;
-    A_ObrThirdPart:= A_ObrThirdPart + ZALOG;
-    // k := ListCount(Obr_List);                            
-    // While k>0 do    
-    // 
-    //     // формат Obr_List: ТИП обременения;Количество;SELF_ID контрагента;Ссылка на условия;NUM основания;DATE основания;текст основания;ALT-код типа отнования;Тип блокировки;Причина блокировки
-    //     //                 'BENEF_ZDR'     ;AMOUNT    ;str(CONTRAGENT)    ;CONDITIONS       ;             ;              ;   Z_NUMBER    ;                      ;              ;                  ');
-    //     //                 1               ;2         ;3                  ;4                ;5            ;6             ;7              ;8                     ;9             ;10                 
-    // 
-    //      item   := ListGet(Obr_List, k - 1);
-    //      DESCR  := Token(item, ';', 1);
-    //      TYPE_  := Token(item, ';', 9);                // Тип блокировки
-    //      OSN    := Token(item, ';', 7);
-    //      REASON := int(Token(item, ';', 10));           // Причина блокировки
-    //      //NUMBER := Token(item, ';', 6);
-    //     AMOUNT := float(Token(item, ';', 2));
-    //     if (DESCR = 'D_E_BLOCKS') then
-    //         if (TYPE_ = 3) then          // Арест
-    //             A_ObrBlin := A_ObrBlin + AMOUNT;
-    //         elsif (TYPE_ = 1) then       // Блокировка
-    //             if (REASON = 1) then     // В связи со смертию
-    //                 A_ObrDeath := A_ObrDeath + AMOUNT;
-    //             elsif (REASON = 2) then  // Блокировка на основании федерального закона или ином законном основании
-    //                 A_ObrLawBased := A_ObrLawBased + AMOUNT;
-    //             end;
-    //         else
-    //             dummy   // не знаем как остальное должно интерпретироваться
-    //         end;
-    //     elsif (pos('D_E_ZALOG', DESCR)>0) then
-    //         A_ObrZalog := A_ObrZalog + AMOUNT;
-    //         // Консультировались с ОСД. Считают что Залог и Обременение правами третьих лиц одно и то же.
-    //         A_ObrThirdPart := A_ObrThirdPart + AMOUNT;
-    //     else 
-    //         dummy   // не знаем как остальное должно интерпретироваться
-    //     end;
-    //     dec(k);
-    // End;
-    // Obr_List_G := Obr_List_G + Obr_List;
+    A_ObrBlin     := A_ObrBlin      + BLIN;
+    A_ObrDeath    := A_ObrDeath     + BLOCK_DEATH;
+    A_ObrLawBased := A_ObrLawBased  + BLOCK_ON_LOW;
+    A_ObrZalog    := A_ObrZalog     + ZALOG;
+    A_ObrThirdPart:= A_ObrThirdPart + ZALOG; // Консультировались с ОСД. Считают что Залог и Обременение правами третьих лиц одно и то же.
 end;
 //message(Obr_List_G);
 //A_ObrThirdPart, A_ObrDeath, A_ObrBlin, A_ObrLawBased
-
 // --------------------------------------------------------------
-
 function 'ToTable(%CODE:int, %P_COUNT:float, %P_AMOUNT:float)' do
    L := gen_id('Данные', 'OD_DOLS_ID_GEN', 1);
    ExecSQL('Данные', [insert into OD_DOLS (ID, DOC, NUM) values (:A,:B,:C)], -L, REP, inc(NUM));
@@ -957,14 +910,18 @@ if not IsNull(%T) then
    end
 end;
 
-breakpoint;
-_QA.ShowTable.shapka:=1;
-Message(
-        _QA->ShowTable(TT, List('I_OWN', 'S_NAME', 'NORM_NAME', 'S_TYPE', 'S_ADR', 'S_STATE', 'DIG_STATE', 'S_OGRN', 'TS_OGRN', 'TS_INN', 'F_REQ_C', 'S_AMOUNT'), #9)
-        ); 
+// Отладка
+//breakpoint;
+//_QA.ShowTable.shapka:=1;
+//Message(
+//        _QA->ShowTable(TT, List('I_OWN', 'S_NAME', 'NORM_NAME', 'S_TYPE', 'S_ADR', 'S_STATE', 'DIG_STATE', 'S_OGRN', 'TS_OGRN', 'TS_INN', 'F_REQ_C', 'S_AMOUNT'), #9)
+//        ); 
+
 //Переписываем все что набралось в TT в переданную в %T таблицу. Дубликаты схлопаываем, складывая AMOUNT
+colShlop := 0;
+first    := 1;
 if (not IsNull(%T) and TT.@recordcount>0) then
-   TableOrder(TT,'S_NAME;S_OGRN', 'ASC');
+   TableOrder(TT,'NORM_NAME;S_OGRN', 'ASC');
    TT.@FIRST;
    I_OWN     := TableFieldVal(TT, 'I_OWN');        S_NAME    := TableFieldVal(TT, 'S_NAME');
    S_TYPE    := TableFieldVal(TT, 'S_TYPE');       S_ADR     := TableFieldVal(TT, 'S_ADR');
@@ -979,17 +936,28 @@ if (not IsNull(%T) and TT.@recordcount>0) then
        else
            z:=IsEqual(S_F_REQ_C, TableFieldVal(TT, 'F_REQ_C'))
        end;
-       
+       breakpoint;
        // if ((IsEqual(S_NAME,TableFieldVal(TT, 'S_NAME')) and z) and ~TT.@EOF) then       
        if (
            (
-            (( ((S_STATE = 643 and S_TYPE = 1) or (S_TYPE = 0)) and IsEqual(S_NAME,TableFieldVal(TT, 'S_NAME'))) or ( S_STATE <> 643 )) and z            
+            (( ((TT._DIG_STATE = '643' and TT._S_TYPE = 1) or (TT._S_TYPE = 0)) and IsEqual(S_NAME, TableFieldVal(TT, 'S_NAME'))) or ( TT._DIG_STATE <> '643' )) and z            
            ) 
-            and ~TT.@EOF
-          ) then S_AMOUNT:=S_AMOUNT+float(TableFieldVal(TT, 'S_AMOUNT'));
+            and ~TT.@EOF ) then 
+           S_AMOUNT:=S_AMOUNT+float(TableFieldVal(TT, 'S_AMOUNT'));
+           if first then
+               inc(colShlop);
+               TableInsert(TS, List('ID='+str(colShlop),'I_OWN='+str(I_OWN),'S_NAME='+str(S_NAME),'S_TYPE='+str(S_TYPE),'S_ADR='+str(S_ADR),'S_STATE='+str(S_STATE),'DIG_STATE='+str(DIG_STATE),
+                                        'S_OGRN='+str(S_OGRN), 'F_REQ_C='+S_F_REQ_C, 'S_AMOUNT='+str(S_AMOUNT), 'TS_OGRN='+TT._TS_OGRN, 'TS_INN='+TT._TS_INN));
+               first := 0;
+           end;
+           TableInsert(TS, List('ID='+str(colShlop),'I_OWN='+str(TT._I_OWN),'S_NAME='+str(TT._S_NAME),'S_TYPE='+str(TT._S_TYPE),'S_ADR='+str(TT._S_ADR),'S_STATE='+str(TT._S_STATE),'DIG_STATE='+str(TT._DIG_STATE),
+                                    'S_OGRN='+str(TT._S_OGRN), 'F_REQ_C='+TT._F_REQ_C, 'S_AMOUNT='+str(TT._S_AMOUNT), 'TS_OGRN='+TT._TS_OGRN,'TS_INN='+TT._TS_INN));
+           
        else
+           first := 1;
            TableInsert(%T, List('I_OWN='+str(I_OWN),'S_NAME='+str(S_NAME),'S_TYPE='+str(S_TYPE),'S_ADR='+str(S_ADR),'S_STATE='+str(S_STATE),'DIG_STATE='+str(DIG_STATE),
                                 'S_OGRN='+str(S_OGRN), 'F_REQ_C='+S_F_REQ_C, 'S_AMOUNT='+str(S_AMOUNT)));
+           // -----------------------------------------
            if (itry(S_AMOUNT/A_AccALL,0)>=0.05) then inc(QStrSheet9);end;
            inc(Q1StrSheet9);
            I_OWN     :=TableFieldVal(TT, 'I_OWN');         S_NAME    := TableFieldVal(TT, 'S_NAME');
@@ -1001,5 +969,18 @@ if (not IsNull(%T) and TT.@recordcount>0) then
        end;
     Until TT.@EOF;
 end;
+// Отладка
+//_QA.ShowTable.shapka:=1;
+//Message(
+//        _QA->ShowTable(TS, List('ID', 'I_OWN', 'S_NAME', 'NORM_NAME', 'S_TYPE', 'S_ADR', 'S_STATE', 'DIG_STATE', 'S_OGRN', 'TS_OGRN', 'TS_INN', 'F_REQ_C', 'S_AMOUNT'), #9)
+//        ); 
 
+ExecSQL( 'Данные', 'delete from TMP_INVESTMENT where APPL_ID=:APPL_ID', APPL_ID+7 );
+TS.@FIRST;
+While ~TS.@EOF do
+    ExecSQL( 'Данные', [insert /*+ */ into TMP_INVESTMENT ( APPL_ID,    B_SYS_NAME,  IS_RUR,   DEPOSIT,   CONTR,   CHAIN,    AMOUNT,        C_NAME,     LEVEL_,     I_NAME,      INVESTMENT,   RATE_COMMENT,  ID,     FULL_INVEST)
+                                            values (:APPL_ID,   :B_SYS_NAME,   :IS_RUR,     :DEPOSIT,  :CONTR,   :CHAIN,    :AMOUNT,       :C_NAME,    :LEVEL_,    :I_NAME,     :INVESTMENT,  :RATE_COMMENT, :ID,    :FULL_INVEST)],
+                                                     APPL_ID+7,  TS._TS_INN, clear(0),    clear(0),  clear(0), clear(0),  TS._S_AMOUNT,  TS._S_NAME, TS._S_TYPE, TS._TS_OGRN, TS._S_OGRN,   TS._F_REQ_C,   TS._ID, TS._I_OWN );
+    TS.@Next;
+End;
 REP

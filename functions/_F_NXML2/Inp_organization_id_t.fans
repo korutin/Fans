@@ -1,0 +1,187 @@
+//Inp_organization_id_t(%ds: int; %Way:str; %DOCS:Table, DOC_FACE :int; DOCT_FOUND:str; LEENI :int, IN_COUNTRY :str,  IN_DAT :str, SHORT_NAME:str, Info: str):int
+// ------------------------------------------------
+// Поиск  лица по документам до первого случая, когда лицо определено.
+
+// SVS - перехватил 24.11.2020
+// DOC_FACE - SELF_ID  лица по документам
+//Формат таблицы, которая должны быть определена в вызывающей функции:
+//   %DOCS= Table(code_type str,doc_num str, doc_date date,reg_org str, param_type int, narrative str )
+
+//LEENI  индикатор юп лица 1= юр. лицо
+// IN_COUNTRY двухсимвольный код страны регистрации
+// IN_DAT дата регистрации
+// SHORT_NAME КРаткое наименование лица
+
+//Возможные значение CODE_TYPE
+// LICS Лицензия
+// STIC Свидетельство о регистрации до 1 июля 2002г
+// REGN Свидетельство о регистрации и внесении записи в ЕГРЮЛ после 1 июля 2002г.
+// OGRN Свидетельство о внесении записи в ЕГРЮЛ
+// INCR Сертификат об инкорпорации
+// USTV Устав
+// OTHR Другое. Используется, если невозможно отнести тип документа к одному из указанных в справочнике типов
+// LEIC LEI code
+// SBIC SWIFT BIC
+// TMRL Правила доверительного управления ПИФ
+// MMRL Правила доверительного управления ипотечным покрытием
+
+//CODE_TYPE приводится к внутреннему коду Fansy из классификатора типов документов. Но соответствующий для TMRL код отсутствует, поэтому в рамках модуля _F_NXML2 правила ДУ (TMRL) кодируютя как 999
+
+var code_type, narrative, org_doc_num,  doc_date, reg_org, param_type;
+var DOC_TYPE, DOC_NUM, DOC_DAT, OGRN, OGRN_DATE,DOC_SER, COUNTER, SH_ID;
+var InfoFrom;
+var legal_entity_indicator, country_of_incorporation, date_of_incorporation;
+var ListParams := List();
+var  x_organization_id;
+var For_Find;
+
+InfoFrom   := '';
+Info       := '';
+DOCT_FOUND := clear('');
+   if %ds.?organization_id  then
+      x_organization_id :=  %ds._organization_id;
+      while not  x_organization_id.@eof  do
+       //param_type = 1 =только номер, =2 серия и номер
+        DOC_TYPE:= 0;
+         _F_NXML2  ->Inp_Organization_document_t(x_organization_id, %Way,  code_type, narrative, org_doc_num,  doc_date, reg_org, param_type,InfoFrom);
+         Info := _F_FXML->Add_Info(Info, InfoFrom);
+
+         %DOCS.@APPEND;
+         %DOCS._CODE_TYPE :=  code_type;
+         %DOCS._doc_num :=  org_doc_num;
+         %DOCS._doc_date :=  doc_date;
+         %DOCS._reg_org :=  reg_org;
+         %DOCS._param_type :=  param_type;
+         %DOCS._narrative :=  narrative;
+         %DOCS.@POST;
+         x_organization_id.@Next;
+      end;
+   else
+       Info := _F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Блок <organization_idt_t>.  Отсутствует обязательный тэг <organization_id>'));
+
+   end;
+
+   if %ds.?legal_entity_indicator  then
+    //Признак юридического лица, Yes - организация является юридическим лицом, иначе - не является
+      legal_entity_indicator := %ds._legal_entity_indicator;
+           if UPPERCASE(legal_entity_indicator) ='YES' then
+               LEENI  := 1;
+          else
+               LEENI  := 0;
+          end;    
+   end;
+
+
+   if %ds.?country_of_incorporation  then
+    //Страна, резидентом которой является организация. Двухсимвольный код страны в соответствии с ISO 3166. Например, Россия - RU
+      country_of_incorporation := %ds._country_of_incorporation;
+       IN_COUNTRY := country_of_incorporation;
+   else
+       IN_COUNTRY := '';
+   end;
+
+   if %ds.?date_of_incorporation  then
+    //Дата регистрации
+      date_of_incorporation := date(%ds._date_of_incorporation);
+      IN_DAT := date_of_incorporation;
+   else
+        IN_DAT := Clear(now);
+   end;
+   if %ds.?short_name  then
+    //Краткое наименование лица
+      SHORT_NAME := %ds._short_name;
+   end;
+
+    DOC_TYPE:=0;
+    DOC_DAT:=Clear(now);
+    DOC_NUM:='';
+    OGRN := '';
+    OGRN_DATE := Clear(now);
+    DOC_SER := '';
+
+    %DOCS.@first;
+    while not  %DOCS.@eof  do
+        ListParams := List();
+         code_type      := %DOCS._CODE_TYPE;
+         org_doc_num    := %DOCS._doc_num;
+         doc_date       := %DOCS._doc_date;
+         reg_org        := %DOCS._reg_org;
+         param_type     := %DOCS._param_type;
+         For_Find := 1;
+         if code_type in List('STIC','REGN') then //свидетельство о регистрации            
+            DOC_TYPE:=7;
+            DOC_DAT:=doc_date;
+            DOC_NUM:=org_doc_num;
+
+            if param_type =2 then
+               DOC_SER := Trim(Token(org_doc_num,' ',1));
+               DOC_NUM := Trim(Token(org_doc_num,' ',2));
+            end;
+         elsif code_type='OGRN' then // свидетельство о внесении записи в ЕГРЮЛ
+               OGRN:=org_doc_num;
+               OGRN_DATE :=doc_date;
+         elsif code_type='INCR' then // сертификат об инкорпорации
+            DOC_TYPE :=10;
+            DOC_DAT  := doc_date;
+            DOC_NUM  := org_doc_num;
+            if param_type =2 then
+               DOC_SER := Trim(Token(org_doc_num,' ',1));
+               DOC_NUM := Trim(Token(org_doc_num,' ',2));
+            end;
+         elsif code_type='TMRL' then // Номер правил ДУ
+            For_Find := 0;
+            DOC_FACE := clear(0);
+            DOC_TYPE := 999;  DOC_DAT   := Clear(now); DOC_NUM  :=''; DOC_SER  := '';
+            OGRN     := ''; OGRN_DATE := Clear(now);
+            SH_ID    := clear(0);
+            SH_ID    := _F_DEPO->Find_Share(3,  org_doc_num, '', '', 0);
+            if ~isBlank(SH_ID) then
+                _F_REPORT->GetShare(SH_ID);
+                DOC_FACE := _F_REPORT.GetShare.IssuerID;
+                if not (IsBlank(DOC_FACE) or DOC_FACE =0 ) then 
+                    DOCT_FOUND := code_type;
+                    exit;
+                end;
+            else                
+                Info := _F_NXML2->Add_InfoWay(%Way, 'В справочнике не обнаружен пай с заданным номером правил ДУ');
+            end                
+         else
+            For_Find :=0;
+            DOC_TYPE :=0;
+            DOC_DAT  :=Clear(now);
+            DOC_NUM  :='';
+            OGRN     := '';
+            OGRN_DATE:= Clear(now);
+            DOC_SER  := '';
+         end;
+        If For_Find = 1  then
+            if ~IsBlank(DOC_DAT)          then ListAdd(ListParams, 'DOC_DAT='  + str( DOC_DAT));  end;
+            if ~IsBlank(DOC_NUM)          then ListAdd(ListParams, 'DOC_NUM='  + str( DOC_NUM));  end;
+            if ~IsBlank(DOC_SER)          then ListAdd(ListParams, 'DOC_SER='  + str( DOC_SER));  end;
+            if DOC_TYPE > 0               then ListAdd(ListParams, 'DOC_TYPE='  + str( DOC_TYPE));  end;
+            if ~IsBlank(OGRN)             then ListAdd(ListParams, 'OGRN=' + str( OGRN));  end;
+            if ~IsBlank(OGRN_DATE)        then ListAdd(ListParams, 'OGRN_DATE=' + str(OGRN_DATE));  end;
+
+            DOC_FACE := _F_IN_MESS->FIND_FACE( ListParams, 0, 0, COUNTER, InfoFrom);
+
+            if COUNTER > 1 then DOC_FACE := clear(0); end;
+
+            if not (IsBlank(DOC_FACE) or DOC_FACE =0 ) then 
+                DOCT_FOUND := code_type;
+                exit;
+            end;
+
+            Info := _F_FXML->Add_Info(Info, InfoFrom);
+        end;
+        %DOCS.@Next;
+    end;
+    if  IsBlank(DOC_FACE) or DOC_FACE =0  then
+        if not IsBlank(SHORT_NAME) then
+            ListParams := List();
+            ListAdd(ListParams, 'NAME=' + str(SHORT_NAME));
+            DOC_FACE := _F_IN_MESS->FIND_FACE( ListParams, 0, 0, COUNTER, InfoFrom);
+            if COUNTER > 1 then DOC_FACE := clear(0); end;
+        end;
+    end;
+
+DOC_FACE;

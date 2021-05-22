@@ -1,0 +1,1500 @@
+// PARTAD_REESTR_IMPORT
+// Импорт раскрытия информации по междепозитарным и ДУ счетам
+// Входные файлы в форматах ПАРТАД
+// REGISTER_OF_SHAREHOLDERS      base_xml_partad_v_FRD_07_01.xsd  Список владельцев, Список лиц, имеющих право на получение доходов.
+// REGISTER_OF_SHAREHOLDERS      base_xml_partad_v2_0.xsd   Список владельцев, Список лиц, имеющих право на получение доходов.
+// REGISTER_OF_SHAREHOLDERS_SIF  FRCI_08_1  по примеру от ДКК пример
+// REGISTER_OF_SHAREHOLDERS_SIF  FRCI_08_02.xsd   Список лиц (владельцев / зарегистрированных лиц) паевого инвестиционного фонда
+
+var File_Name,
+All, //всего записей в dbf
+All_l, //всего записей в подвале (для очистки)
+R_DATE,
+VZAMEN := 0,
+ID,
+PLACE_NUM := '',
+NewOwner, SHARE_NAME:='', ISSUER:=D_OPERATION._ISSUER
+;
+
+
+var ErrList  := List();
+var Amount_All,Start_Amount,Loaded_Amount, DEPO_2, DEPO_2_NAME;
+var REZ;
+uses _Metal_F;
+
+function  'Get_spr_AsFaceDoc(%docnum: Str, doc_type: Int)' do
+// - возвращает код документа по физ. лицу в кодировке справочника OD_SYS_TABS (FACE_DOCS) 
+  doc_type:=11;
+  if trim(%docnum)='01' then doc_type := 8;        // Паспорт, удостоверяющий личность гражданина СССР и действующий на территории РФ до 31 декабря 2003 года
+  elsif trim(%docnum)='02' then doc_type :=20;     //Паспорт, удостоверяющий личность гражданина РФ за пределами РФ, образца до 1997 года
+  elsif trim(%docnum)='03' then doc_type := 4;     //Свидетельство о рождении (01.10.97 г. – 14-летнего) возраста
+  elsif trim(%docnum)='04' then doc_type := 2;     //Удостоверение личности офицера для военнослужащих (офицеров, прапорщиков, мичманов)
+  elsif trim(%docnum)='05' then doc_type := 5;     //Справка об освобождении из места лишения свободы. Для лиц, освободившихся из мест лишения свободы.
+  elsif trim(%docnum)='06' then doc_type := 22;     //Паспорт моряка Минморфлота СССР (РФ), выданный до 1997 года
+  elsif trim(%docnum)='07' then doc_type := 3;     //Военный билет для солдат, матросов, сержантов и старшин, проходящих военную службу по призыву или контракту
+  elsif trim(%docnum)='09' then doc_type := 14;     //Дипломатический паспорт для граждан РФ
+  elsif trim(%docnum)='10' then doc_type := 21;     //Заграничный паспорт для постоянно проживающих за границей граждан, которые временно находятся на территории Российской Федерации
+  elsif trim(%docnum)='11' then doc_type := 16;     //Свидетельство о регистрации ходатайства иммигранта о признании его беженцем. Для беженцев, не имеющих статуса беженца
+  elsif trim(%docnum)='12' then doc_type := 17;     //Вид на жительство в РФ
+  elsif trim(%docnum)='13' then doc_type := 18;     //Удостоверение беженца в РФ. Для беженцев
+  elsif trim(%docnum)='14' then doc_type := 19;     //Временное удостоверение личности гражданина РФ по форме 2П
+  elsif trim(%docnum)='21' then doc_type := 20;     //Паспорт гражданина РФ, действующий на территории РФ с 1 октября 1997 года
+  elsif trim(%docnum)='22' then doc_type := 21;     //Паспорт, удостоверяющий личность гражданина РФ за пределами РФ, образца 1997 года
+  elsif trim(%docnum)='23' then doc_type := 26;      //  Свидетельство о рождении, выданное уполномоченным органом иностранного государства (для лиц, не достигших 14-летнего возраста)
+  elsif trim(%docnum)='26' then doc_type := 22;     //Паспорт моряка (удостоверение личности гражданина, работающего на судах заграничного плавания или на иностранных судах) образца 1997 года
+  elsif trim(%docnum)='27' then doc_type := 23;     //Военный билет офицера запаса
+  elsif trim(%docnum)='91' then doc_type := 11;     //Иные, выдаваемые органами внутренних дел РФ документы, удостоверяющие личность гражданина
+  elsif trim(%docnum)='00' then doc_type := 11;     //Прочее
+  end;
+
+end; //function
+
+
+function  'Inp_R_FACE_FCDR_13_01(%ds:int, %F, OW_ID,S_TYPE, NAME, DATE_BIRTH, INN, D_TYPE , D_SER, D_NUM, D_DAT, D_PLACE,MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES, OGRN, OGRN_D, OGRN_P, DEPO_TYPE)' do
+//Inp_R_FACE(%DS,%F, OW_ID,S_TYPE, NAME, DATE_BIRTH, INN, D_TYPE ,
+//D_SER, D_NUM, D_DAT, D_PLACE,MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+//OGRN, OGRN_D, OGRN_P,DEPO_TYPE);
+// Читаем параметры лица из тега  shareholder   (Модуль _F_PXML)
+// %DS - это тэг shareholder
+// %F = FRC для РКИ вообще, это первые три символа от  версии файла из тэга version(если есть три символа!)
+
+var s;
+var individual_or_entity;
+var InfoFrom := clear('');
+var RefNum := clear('');
+var RefDate := clear(Now);
+var RefName := clear('');
+var RefSys := clear('');
+var P := clear(0);
+var Cnt := 0;
+var x_account_dtls, x_account_id, account_id,account_type;
+var x_shareholder_info, x_shareholder_id, x_shareholder_contacts,x_shareholder_dtls;
+var x_tax_category;
+var x_bank_prop_rub;
+var x_juridical,x_entity_reg_dtls,x_reg_doc_type,entity_reg_doc_type_code;
+var x_individual,x_individual_name,x_individual_name_separate,x_individual_document,x_doc_type,individual_document_type_code;
+var x_phone_or_fax,phone_type;
+
+var ownerid;
+var x_postal_name,x_address,x_partad,index,address, x_shareholder_address, country_iso, country_id ;
+var DOPINFO;
+ownerid := Clear('');
+account_id := Clear('');
+OW_ID :=  Clear('');
+//============================================================================
+
+function  'Doc_NumType( %docnum:string )' do
+var doc_type :=11;
+   if trim(%docnum)='LICS' then doc_type := 8;
+   elsif trim(%docnum)='STIC' then doc_type := 7;
+   elsif trim(%docnum)='REGN' then doc_type := 7;
+   elsif trim(%docnum)='OGRN' then doc_type := 27;
+   elsif trim(%docnum)='INCR' then doc_type := 10;
+   elsif trim(%docnum)='OTHR' then doc_type := 11;
+   end;
+   return(doc_type);
+end;
+
+//============================================================================
+
+D_TYPE := 0;
+OW_ID := '';
+
+DATE_BIRTH :=Clear(now);
+D_DAT :=Clear(now);
+IS_NERES:= 0;
+NAME:= INN :=D_SER := D_NUM:=  D_PLACE:=  MAIL_ADR:=   HOME_ADR:=   PHONE:=   FAX:=   EMAIL:=   STATE:= '';
+OGRN := '';
+OGRN_D :=Clear(now);
+OGRN_P:=DEPO_TYPE := '';
+
+  if  %F = 'FCD' then
+         // FCD_13_01
+        if %ds.?shareholder_id    then
+           x_shareholder_id := %ds._shareholder_id;
+           if x_shareholder_id.?id    then
+              ownerid := x_shareholder_id._id;
+           end;
+        end;
+
+        if %ds.?account_dtls    then
+           x_account_dtls := %ds._account_dtls;
+           if x_account_dtls.?account_type    then
+              account_type:=x_account_dtls._account_type;
+                  if account_type= 20 or  account_type= 21 then
+                     DEPO_TYPE:=account_type;
+                  else
+                     if APPLICATION = 'REESTR' then
+                     // Надо убрать бы ссылку на _F_FXML...
+                        DEPO_TYPE :=           _F_FXML->      Get_REESTR_SUBTYPE_by_Account_Type(account_type);
+                     else
+                        DEPO_TYPE :=           _F_FXML->      Get_DEPO_SUBTYPE_by_Account_Type(account_type);
+                     end;
+                  end;
+           end;
+        end;
+
+        if not IsBlank(account_id) then
+            if not IsBlank(ownerid) then
+               OW_ID :=  Str(ownerid) + ' / '+ Str(account_id);
+            else
+               OW_ID := Str(account_id);
+            end;
+        else
+           if not IsBlank(ownerid) then
+               OW_ID :=  Str(ownerid);
+           else
+              OW_ID :=  'void';
+           end;
+        end;
+
+        if %ds.?shareholder_info    then
+           x_shareholder_info := %ds._shareholder_info ;
+           if x_shareholder_info.?postal_name    then
+              x_postal_name := x_shareholder_info._postal_name;
+              x_address := x_postal_name._address;
+              if x_address.?partad then
+                 x_partad :=   x_address._partad;
+                 address  := x_partad._address;
+                 if  x_partad.?index then
+                   index := x_partad._index;  
+                   MAIL_ADR:= index + ' ' + address;
+                 else 
+                  MAIL_ADR:= address;
+                 end;
+              else
+                 if x_address.?plain then
+                    MAIL_ADR :=  x_address._plain;
+                 else
+                    MAIL_ADR :=   '';
+                 end;
+              end;
+           end;
+
+           x_shareholder_dtls := x_shareholder_info._shareholder_dtls;
+           NAME :=  x_shareholder_dtls._name;
+
+           if x_shareholder_dtls.?address   then
+              x_address := x_shareholder_dtls._address;
+              if x_address.?partad then
+                 x_partad :=   x_address._partad;
+                 address  := x_partad._address;
+                 if  x_partad.?country then
+                     STATE:=x_partad._country;
+                 end;
+                 if  x_partad.?index then
+                   index := x_partad._index;
+                   HOME_ADR := index + ' ' + address;
+                 else 
+                   HOME_ADR := address;
+                 end;
+              else
+                 if x_address.?plain then
+                    HOME_ADR :=   x_address._plain;
+                 else
+                    HOME_ADR :=   '';
+                 end;
+              end;
+           else
+              HOME_ADR := '';
+           end;
+
+
+           if x_shareholder_info.?nationality    then
+             // гражданство
+                STATE :=   x_shareholder_info._nationality;
+           else
+                STATE := '';
+           end;
+
+           if x_shareholder_info.?birthday    then
+             // день рождения
+                s :=      x_shareholder_info._birthday;
+                DATE_BIRTH:=_f_xml->Get_DateTime(s)
+           else
+                DATE_BIRTH := Clear(NOW);
+           end;
+
+           if x_shareholder_dtls.?OGRN    then
+              OGRN  := x_shareholder_dtls._OGRN ;
+           else
+              OGRN := '';
+           end;
+
+           if x_shareholder_dtls.?INN   then
+              INN :=   x_shareholder_dtls._INN;
+           elsif x_shareholder_info.?INN then  // в формате FCDR_13_01
+                  INN :=   x_shareholder_info._INN;
+           else 
+              INN := '';
+           end;
+
+           individual_or_entity  := x_shareholder_dtls._individual_or_entity;
+           if   individual_or_entity ='LEGL' then
+              // Юрик
+                x_entity_reg_dtls  :=x_shareholder_dtls._entity_reg_dtls;
+                S_TYPE := 1;
+                while not   x_entity_reg_dtls.@Eof do
+
+                          x_reg_doc_type :=  x_entity_reg_dtls._reg_doc_type;
+                          entity_reg_doc_type_code  :=  x_reg_doc_type._entity_reg_doc_type_code;
+                          if entity_reg_doc_type_code ='OGRN' then
+                              OGRN    :=    x_entity_reg_dtls._reg_num;
+                              s       :=    x_entity_reg_dtls._date_of_incorporation;
+                              OGRN_D  :=    _f_xml->Get_DateTime(s);
+                              OGRN_P  :=    x_entity_reg_dtls._reg_org;
+
+                          elsif  (entity_reg_doc_type_code ='REGN')  or (entity_reg_doc_type_code ='STIC')  then
+                              D_TYPE   :=    Doc_NumType( entity_reg_doc_type_code);
+                              D_SER :='';
+                              D_NUM    :=    x_entity_reg_dtls._reg_num;
+                              s        :=    x_entity_reg_dtls._date_of_incorporation;
+                              D_DAT    :=    _f_xml->Get_DateTime(s);
+                              D_PLACE  :=    x_entity_reg_dtls._reg_org;
+                          elsif  D_TYPE = 0 then
+                              D_TYPE   :=    Doc_NumType( entity_reg_doc_type_code);
+                              if x_entity_reg_dtls.?reg_doc_part then
+                                  D_SER :=    x_entity_reg_dtls._reg_doc_part;
+                              else
+                                  D_SER :='';
+                              end;
+                              D_NUM    :=    x_entity_reg_dtls._reg_num;
+                              s        :=    x_entity_reg_dtls._date_of_incorporation;
+                              D_DAT    :=    _f_xml->Get_DateTime(s);
+                              D_PLACE  :=    x_entity_reg_dtls._reg_org;
+                          end;
+                   x_entity_reg_dtls.@next;
+                end;
+
+                if x_shareholder_dtls.?address then
+                         x_shareholder_address:= x_shareholder_dtls._address;
+                         if x_shareholder_address.?partad then
+                            x_partad  := x_shareholder_address._partad;
+                            STATE  := x_partad._country;
+                        end;
+                end;
+           else
+             // физик
+                S_TYPE := 0;
+                x_individual_document         :=    x_shareholder_dtls._individual_document;
+                x_doc_type                    :=    x_individual_document._doc_type;
+                individual_document_type_code :=    x_doc_type._individual_document_type_code;
+                Get_spr_AsFaceDoc(individual_document_type_code, D_TYPE);
+
+                if x_individual_document.?doc_ser then
+                    D_SER :=    x_individual_document._doc_ser;
+                else
+                    D_SER :='';
+                end;
+
+                D_NUM                         :=    x_individual_document._doc_num;
+                s                             :=    x_individual_document._doc_date;
+                D_DAT                         :=    _f_xml->Get_DateTime(s);
+                D_PLACE                       :=    x_individual_document._org;
+                if x_individual_document.?place then
+                   D_PLACE := D_PLACE + ' ; '+ x_individual_document._place;
+                end;
+           end;
+
+        end;
+
+
+
+
+        if %ds.?shareholder_contacts    then
+           x_shareholder_contacts := %ds._shareholder_contacts;
+           x_phone_or_fax  :=   x_shareholder_contacts._phone_or_fax;
+           PHONE := '';
+           FAX := '';
+           while not   x_phone_or_fax.@Eof do
+             if x_phone_or_fax.?phone_type    then
+                phone_type :=  x_phone_or_fax._phone_type;
+                if phone_type ='FAXI' then
+                    if IsBlank(FAX) then
+                       FAX :=  x_phone_or_fax._phone_num;
+                    else
+                       FAX := FAX + ';'+ x_phone_or_fax._phone_num;
+                    end;
+                else
+                   if IsBlank(PHONE) then
+                      PHONE :=  x_phone_or_fax._phone_num;
+                   else
+                      PHONE := PHONE + ';' + x_phone_or_fax._phone_num;
+                   end;
+                end;
+             else
+                if IsBlank(PHONE) then
+                   PHONE :=  x_phone_or_fax._phone_num;
+                else
+                   PHONE := PHONE + ';' + x_phone_or_fax._phone_num;
+                end;
+             end;
+               x_phone_or_fax.@next;
+           end;
+        end;
+
+        if %ds.?tax_category    then
+            x_tax_category := %ds._tax_category;
+            if   x_tax_category._tax_status_code = Str(1) then
+               IS_NERES := 0;
+            else
+               IS_NERES := 1;
+            end;
+        else
+            IS_NERES := 0;
+        end;
+
+  else
+      // А теперь РКИ
+
+           if not IsNull (_Metal_F->XML_FindField(%ds, 'postal_name'))    then
+              x_postal_name := _Metal_F->XML_FieldByName(%ds, 'postal_name');
+              x_address := _Metal_F->XML_FieldByName(x_postal_name, 'post_address');
+
+
+              if  not IsBlank(_Metal_F->XML_FindField(x_address, 'plain')) then
+
+                MAIL_ADR:=_Metal_F->XML_FieldByName(x_address, 'plain' );
+
+              elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'partad')) then
+                 x_partad :=   _Metal_F->XML_FieldByName(x_address, 'partad' );
+                 if  not IsBlank(_Metal_F->XML_FindField(x_partad, 'index')) then
+                   index := _Metal_F->XML_FieldByName(x_partad, 'index' );
+                   address  := _Metal_F->XML_FieldByName(x_partad, 'address' );
+                   MAIL_ADR:= index + ' ' + address;
+                 end;
+
+              elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'kladr')) then
+                       MAIL_ADR:=  _Metal_F->XML_FieldByName(x_address, 'kladr' );
+              end ;
+           end;
+
+        if not IsNull (_Metal_F->XML_FindField(%ds, 'shareholder_contacts'))    then
+           x_shareholder_contacts := _Metal_F->XML_FieldByName(%ds, 'shareholder_contacts');
+           x_phone_or_fax  :=   _Metal_F->XML_FieldByName(x_shareholder_contacts, 'phone_or_fax');
+           PHONE := '';
+           FAX := '';
+           while not   x_phone_or_fax.@Eof do
+             if not IsNull  (_Metal_F->XML_FindField(x_phone_or_fax, 'phone_type'))    then
+                phone_type :=   _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_type');
+                if phone_type ='FAXI' then
+                    if IsBlank(FAX) then
+                       FAX :=  _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                    else
+                       FAX := FAX + ';'+ _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                    end;
+                else
+                   if IsBlank(PHONE) then
+                      PHONE :=  _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                   else
+                      PHONE := PHONE + ';' + _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                   end;
+                end;
+             else
+                if IsBlank(PHONE) then
+                   PHONE :=  _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                else
+                   PHONE := PHONE + ';' + _Metal_F->XML_FieldByName(x_phone_or_fax, 'phone_num');
+                end;
+             end;
+               x_phone_or_fax.@next;
+           end;
+        end;
+        if not IsNull (_Metal_F->XML_FindField(%ds, 'tax_category'))    then
+            x_tax_category := _Metal_F->XML_FieldByName(%ds, 'tax_category');
+            if   _Metal_F->XML_FieldByName(x_tax_category, 'tax_status_code')  = Str(1) then
+               IS_NERES := 0;
+            else
+               IS_NERES := 1;
+            end;
+        else
+            IS_NERES := 0;
+        end;
+
+        x_shareholder_dtls := _Metal_F->XML_FieldByName(%ds, 'shareholder_dtls') ;
+        if not IsNull (_Metal_F->XML_FindField(x_shareholder_dtls, 'party_id'))    then
+           x_shareholder_id := _Metal_F->XML_FieldByName(%ds, 'shareholder_id');
+           if not IsNull (_Metal_F->XML_FindField(x_shareholder_id, 'id'))    then
+              ownerid := _Metal_F->XML_FindField(x_shareholder_id, 'id');
+         //     OW_ID :=   ownerid;
+           end;
+//        else
+//           OW_ID := '';
+        end;
+
+       if not IsNull(_Metal_F->XML_FindField(x_shareholder_dtls, 'juridical'))    then
+            x_juridical := _Metal_F->XML_FieldByName(x_shareholder_dtls, 'juridical') ;
+            S_TYPE := 1;
+            NAME :=  _Metal_F->XML_FieldByName(x_shareholder_dtls, 'juridical_name') ;
+            x_entity_reg_dtls  :=_Metal_F->XML_FieldByName(x_juridical, 'entity_reg_dtls');
+            while not   x_entity_reg_dtls.@Eof do
+               x_reg_doc_type :=  _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_doc_type');
+               entity_reg_doc_type_code  :=  _Metal_F->XML_FieldByName(x_reg_doc_type, 'entity_reg_doc_type_code');
+               if entity_reg_doc_type_code ='OGRN' then
+                   OGRN    :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_num');
+                   s       :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'date_of_incorporation');
+                   OGRN_D  :=    _f_xml->Get_DateTime(s);
+                   OGRN_P  :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_org');
+
+               elsif  (entity_reg_doc_type_code ='REGN')  or (entity_reg_doc_type_code ='STIC')  then
+                   D_TYPE   :=    Doc_NumType( entity_reg_doc_type_code);
+                   D_SER :='';
+                   D_NUM    :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_num');
+                   s        :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'date_of_incorporation');
+                   D_DAT    :=    _f_xml->Get_DateTime(s);
+                   D_PLACE  :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_org');
+               elsif  D_TYPE = 0 then
+                   D_TYPE   :=        Doc_NumType( entity_reg_doc_type_code);
+                   if not IsNull(_Metal_F->XML_FindField(x_entity_reg_dtls, 'reg_doc_part')) then
+                       D_SER :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_doc_part');
+                   else
+                       D_SER :='';
+                   end;
+                   D_NUM    :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_num');
+                   s        :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'date_of_incorporation');
+                   D_DAT    :=    _f_xml->Get_DateTime(s);
+                   D_PLACE  :=    _Metal_F->XML_FieldByName(x_entity_reg_dtls, 'reg_org');
+               end;
+               x_entity_reg_dtls.@next;
+            end;
+
+            if not IsNull(_Metal_F->XML_FindField(x_juridical, 'INN'))    then
+               INN :=   _Metal_F->XML_FieldByName(x_juridical, 'INN');
+            else
+               INN := Clear('');
+            end;
+            if not IsNull (_Metal_F->XML_FindField(x_juridical, 'juridical_legal_address'))    then
+               x_address := _Metal_F->XML_FieldByName(x_juridical, 'juridical_legal_address');
+
+               if  not IsBlank(_Metal_F->XML_FindField(x_address, 'plain')) then
+
+                 HOME_ADR:=_Metal_F->XML_FieldByName(x_address, 'plain' );
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'partad')) then
+                  x_partad :=   _Metal_F->XML_FieldByName(x_address, 'partad' );
+                  if  not IsBlank(_Metal_F->XML_FindField(x_partad, 'index')) then
+                    index := _Metal_F->XML_FieldByName(x_partad, 'index' );
+                    address  := _Metal_F->XML_FieldByName(x_partad, 'address' );
+                    HOME_ADR:= index + ' ' + address;
+                  end;
+
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'kladr')) then
+                        HOME_ADR:=  _Metal_F->XML_FieldByName(x_address, 'kladr' );
+               end ;
+            else
+               HOME_ADR := '';
+            end;
+            if not IsNull (_Metal_F->XML_FindField(x_juridical, 'juridical_post_address'))    then
+               x_postal_name := _Metal_F->XML_FieldByName(x_juridical, 'juridical_post_address');
+               if  not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'plain')) then
+
+                 MAIL_ADR:=_Metal_F->XML_FieldByName(x_postal_name, 'plain' );
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'partad')) then
+                  x_partad :=   _Metal_F->XML_FieldByName(x_postal_name, 'partad' );
+                  if  not IsBlank(_Metal_F->XML_FindField(x_partad, 'index')) then
+                    index := _Metal_F->XML_FieldByName(x_partad, 'index' );
+                    address  := _Metal_F->XML_FieldByName(x_partad, 'address' );
+                    MAIL_ADR:= index + ' ' + address;
+                  end;
+
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'kladr')) then
+                        MAIL_ADR:=  _Metal_F->XML_FieldByName(x_postal_name, 'kladr' );
+               end;
+            end;
+       else
+            //Физик
+            S_TYPE := 0;
+            x_individual := _Metal_F->XML_FieldByName(x_shareholder_dtls, 'individual') ;
+            x_individual_name := _Metal_F->XML_FieldByName(x_individual, 'individual_name') ;
+            if not IsNull(_Metal_F->XML_FindField(x_individual_name, 'individual_name_total'))    then
+               NAME := _Metal_F->XML_FieldByName(x_individual_name, 'individual_name_total');
+               if IsBlank(NAME) then
+                  x_individual_name_separate := _Metal_F->XML_FindField(x_individual_name, 'individual_name_separate');
+                  NAME :=   _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_last')  + ' ' +
+                            _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_first')  + ' ' +
+                            _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_second') ;
+               end;
+            else
+                  x_individual_name_separate := _Metal_F->XML_FindField(x_individual_name, 'individual_name_separate');
+                  NAME :=   _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_last')  + ' ' +
+                            _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_first')  + ' ' +
+                            _Metal_F->XML_FieldByName(x_individual_name_separate, 'name_second') ;
+
+            end ;
+            x_individual_document         :=    _Metal_F->XML_FieldByName(x_individual, 'individual_document');
+            x_doc_type                    :=    _Metal_F->XML_FieldByName(x_individual_document, 'indv_doc_type');
+            individual_document_type_code :=    _Metal_F->XML_FieldByName(x_doc_type, 'individual_document_type_code');
+             Get_spr_AsFaceDoc(individual_document_type_code, D_TYPE);
+
+            if not IsNull(_Metal_F->XML_FindField(x_individual_document, 'indv_doc_ser')) then
+                D_SER :=    _Metal_F->XML_FieldByName(x_individual_document, 'indv_doc_ser');
+            else
+                D_SER :='';
+            end;
+
+            D_NUM                         :=    _Metal_F->XML_FieldByName(x_individual_document, 'indv_doc_num');
+            s                             :=    _Metal_F->XML_FieldByName(x_individual_document, 'indv_doc_date');
+            D_DAT                         :=    _f_xml->Get_DateTime(s);
+            D_PLACE                       :=    _Metal_F->XML_FieldByName(x_individual_document, 'org');
+            if not IsNull(_Metal_F->XML_FindField(x_individual_document, 'place')) then
+               D_PLACE := D_PLACE + ' ; '+  _Metal_F->XML_FieldByName(x_individual_document, 'place');
+            end;
+            if not IsNull (_Metal_F->XML_FindField(x_individual, 'birthday'))    then
+              // гражданство
+                 s :=      _Metal_F->XML_FieldByName(x_individual, 'birthday');
+                 DATE_BIRTH:=_f_xml->Get_DateTime(s)
+            else
+                 DATE_BIRTH := Clear(NOW);
+            end;
+
+            if not IsNull (_Metal_F->XML_FindField(x_individual, 'nationality'))    then
+              // гражданство
+                 STATE :=      _Metal_F->XML_FieldByName(x_individual, 'nationality')
+            else
+                 STATE := Clear('');
+            end;
+            if not IsNull (_Metal_F->XML_FindField(x_individual, 'individual_legal_address'))    then
+               x_address := _Metal_F->XML_FieldByName(x_individual, 'individual_legal_address');
+
+               if  not IsBlank(_Metal_F->XML_FindField(x_address, 'plain')) then
+
+                  HOME_ADR:=_Metal_F->XML_FieldByName(x_address, 'plain' );
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'partad')) then
+                  x_partad :=   _Metal_F->XML_FieldByName(x_address, 'partad' );
+                  if  not IsBlank(_Metal_F->XML_FindField(x_partad, 'index')) then
+                     index := _Metal_F->XML_FieldByName(x_partad, 'index' );
+                     address  := _Metal_F->XML_FieldByName(x_partad, 'address' );
+                     HOME_ADR:= index + ' ' + address;
+                  end;
+
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_address, 'kladr')) then
+                  HOME_ADR:=  _Metal_F->XML_FieldByName(x_address, 'kladr' );
+               end ;
+            else
+               HOME_ADR := '';
+            end;
+            if not IsNull (_Metal_F->XML_FindField(x_individual, 'individual_post_address'))    then
+               x_postal_name := _Metal_F->XML_FieldByName(x_individual, 'individual_post_address');
+
+               if  not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'plain')) then
+
+                  MAIL_ADR:=_Metal_F->XML_FieldByName(x_postal_name, 'plain' );
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'partad')) then
+                  x_partad :=   _Metal_F->XML_FieldByName(x_postal_name, 'partad' );
+                  if  not IsBlank(_Metal_F->XML_FindField(x_partad, 'index')) then
+                     index := _Metal_F->XML_FieldByName(x_partad, 'index' );
+                     address  := _Metal_F->XML_FieldByName(x_partad, 'address' );
+                     MAIL_ADR:= index + ' ' + address;
+                  end;
+
+               elsif    not IsBlank(_Metal_F->XML_FindField(x_postal_name, 'kladr')) then
+                  MAIL_ADR:=  _Metal_F->XML_FieldByName(x_postal_name, 'kladr' );
+               end;
+            else
+               MAIL_ADR:=  '';
+            end;
+
+       end;
+    end; 
+end; // function 
+
+
+function 'Inp_Security_balance_FCDR_13_01(%ds:int, SEQ_class, state_reg_num, ISIN, SEC_Code :String,  total, COLI, COLO,  BLOK,  OTHR :Float)' do
+
+//разбор тэга security_balance_t
+// ТАК, КАК ОН ВЫГЛЯДИТ в формате ПАРТАД FCDR_2013_01
+//  на входе x_shareholder
+
+var x_blocked;
+var x_block_type;
+var  block_type_code;
+var x_quantity,x_unit,x_units;
+var x_proprietary_security_code;
+var  x_total;
+var x_security;
+
+    SEQ_class := '';
+    state_reg_num := '';
+    ISIN     := '';
+    SEC_Code := '';
+          total := 0.; COLI:=0.; COLO := 0.;
+          BLOK :=0.; OTHR := 0.;
+
+if %ds.?total then
+       x_total :=%ds._total;
+//           total := x_total._units;
+           x_units := x_total._units;
+           total := 0.0;
+           try
+               x_units.self;
+               total := _Metal_F->XML_FieldByName(x_units, '#text');
+           except
+                   total := x_units;
+           end;
+end;
+total :=Replace( total,',','.');
+if %ds.?security  then
+   x_security := %ds._security;
+   if  x_security.?security_classification  then
+      // BOND - обл, SHAR - акция,MFUN - пай
+     SEQ_class := x_security._security_classification;
+   end;
+
+   if      x_security.?state_reg_num  then
+      state_reg_num := x_security._state_reg_num;
+   end;
+   if      x_security.?ISIN_identifier  then
+      ISIN := x_security._ISIN_identifier;
+   end;
+   if      x_security.?proprietary_security_code then
+      x_proprietary_security_code := x_security._proprietary_security_code;
+      SEC_Code                    :=  x_proprietary_security_code._ID;
+  // Не рассматриваем кодировщика (поля issuer и scheme_name из proprietary_security_code)
+   end;
+end;
+
+if %ds.?blocked  then
+   x_blocked := %ds._blocked;
+    while not x_blocked.@Eof  do
+
+       x_quantity :=  x_blocked._quantity;
+//       x_unit :=  x_quantity._units;
+           x_unit := 0.0;
+           try
+               x_units.self;
+               total := _Metal_F->XML_FieldByName(x_units, '#text');
+           except
+                   total := x_units;
+           end;
+           total :=Replace( total,',','.');
+
+       x_block_type :=  x_blocked._block_type;
+       block_type_code  :=  x_block_type._block_type_code;
+
+//COLO передано в залог  
+//OTHR иное обременение/блокировка  
+//PLAC размещаемые ценные бумаги  
+//BLFL блокировано в соответствии со ст. 84.8 ФЗ "Об акционерных обществах"  
+//BLTR блокировано в связи с прекращением паевого инвестиционного фонда  
+//BLIN блокировано по решению государственных органов (суд, следователь, пристав и пр.)  
+//BLFC блокировано в связи с предписанием регулятора по финансовому рынку  
+//BLRO блокировано в связи с реорганизацией  
+//BLCV блокировано в связи с конвертацией без реорганизации  
+    if x_unit>0.00 then 
+      if (block_type_code = 'COLO') then
+        //передано в залог
+         COLO := COLO + x_unit;
+        // Можно извлечь счет и данные залогодержателя, но не делаем (секция pledgee_info)
+      elsif (block_type_code = 'BLIN') then
+        // Заблокировано-арестовано
+         BLOK := BLOK + x_unit;
+      elsif block_type_code in list('OTHR','PLAC','BLFL','BLTR','BLFC','BLRO','BLCV')  then
+          OTHR := OTHR + x_unit;
+  /*        if (block_type_code = 'PLAC') then 
+                  BL_COMMENT := 'размещаемые ценные бумаги';
+                    elsif (block_type_code = 'BLFL') then
+                         BL_COMMENT := 'блокировано в соответствии со ст. 84.8 ФЗ "Об акционерных обществах"';
+                    elsif (block_type_code = 'BLTR') then
+                         BL_COMMENT := 'блокировано в связи с прекращением паевого инвестиционного фонда';
+                    elsif (block_type_code = 'BLFC') then
+                         BL_COMMENT := 'блокировано в связи с предписанием регулятора по финансовому рынку';
+                    elsif (block_type_code = 'BLRO') then
+                         BL_COMMENT := 'блокировано в связи с реорганизацией';
+                    elsif (block_type_code = 'BLCV') then
+                         BL_COMMENT := 'блокировано в связи с конвертацией без реорганизации';
+                    else   // 'OTHR'
+                        if x_block_type.?narrative then
+                           BL_COMMENT := x_block_type._narrative;
+                        end; 
+            end; */
+      end;
+    end;
+    x_blocked.@Next;
+  end;  // while
+end;   // if
+end; //function
+
+function 'REG_OF_SHAREHOLDER_BY_PARTAD( %doc_id:int, %DEPO_2:str, %DEPO_2_NAME:str, %R_DATE, %SHARE_NAME, %File_Name:str, %VZAMEN:int, %Start_Amount:float, %PLACE_NUM:str, Loaded_Amount:float,  ErrList)' do
+var Info := '';
+var InfoStr := '';
+var InfoList  := List();
+var IssuerType;
+var x;
+var out_doc_num,out_doc_date,in_doc_num,in_reg_date, doc_num,doc_date;
+
+var CODER_CHOICE_MODE;
+
+var Res;
+var   SelfShareList,   CoderShareList;
+var CHAIN_STR, CHAIN_STR_2,ISSUER,DOC_id;
+var    SHARE_STR, SHARE_CODE;
+// Переменные под тэг <owner>
+var x_link;
+var x_header;
+
+var version;
+var ver;
+var x_service;
+var x_id;
+var PRVS_NUM; //исходящий номер связанного документа и дата и тип
+var RECIPIENT,RECIPIENT_NAME,SENDER,SENDER_NAME;
+var x_issuer;
+var IssuerList;
+var I_name;
+var issuer_name;
+var ISSUER_ID;
+var x_juridical;
+var x_individual;
+var x_account_holder;
+var account_holder_NAME;
+var individual_or_entity;
+var registrar_NAME;
+var corporate_action_code;
+var corporate_action_name;
+var record_date;
+var message_function, message_function_name;
+var information_indicator,information_type_code,information_type_code_name;
+var x_account_dtls,x_account_id,account_type,NUMBER,account_type_name;
+var x_register_list;
+var x_shareholder;
+var x_unit, x_blocked,x_total,x_quantity;
+var x_author, x_bank_prop_rub;
+var Blocked;
+// Переменные под вставку в OD_EXT_FACES
+var OW_ID,S_TYPE, NAME, DATE_BIRTH, INN, D_TYPE ,
+    D_SER, D_NUM, D_DAT, D_PLACE,MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+    B_BIC, B_NAME, B_KORR, B_CITY, B_DEPT, B_DEPT_AC,
+    B_P_INN, B_P_NAME, B_P_ACNT,OGRN, OGRN_D, OGRN_P;
+var HOME_KLADR := '', MAIL_KLADR :='', DOPINFO:='', COUNTRY_ID;
+B_BIC:=  B_NAME:=  B_KORR:=  B_CITY:=  B_DEPT:=  B_DEPT_AC:= B_P_INN:=  B_P_NAME:=  B_P_ACNT:= '';
+
+// Переменные, возвращаемые из  Inp_Security_balance
+var x_Security_balance,x_Security_balances;
+var SEQ_class,  // BOND - обл, SHAR - акция,MFUN - пай
+    state_reg_num,ISIN, SEC_Code,
+    total, COLI,  COLO,  BLOK,  OTHR;
+var BODY, ID,S_ID, CODER_CODE ,SELF_CODE;
+var START_NUM; // Стартовый номер строки третьего подвала
+var LINE, All, i,LL,NN, DEPOZITORY;
+var DEPO_TYPE; // Тип счета по классификатору ФЭНСИ
+var x_main , x_pri, x_registrar,  x_party_dtls;
+var x_information_indicator;
+
+uses _Metal_F;
+
+ErrList := Clear('');
+
+
+try
+    _Metal_F->FileToList(%File_Name);
+    BODY :=_Metal_F.Globals.L;
+except
+   raise('Ошибка при чтении реестра владельцев из внешнего файла : '+ %File_Name + '  ;  ' + EXCEPTION.Text);
+end;
+
+try
+
+   x_main   :=_Metal_F->XML_Open(BODY,'');
+   try
+      if not IsNull(_Metal_F->XML_FindField(x_main, 'version'))   then
+         version   := _Metal_F->XML_FieldByName(x_main, 'version');
+         ver := Copy(version,1,3);
+         //      FRD_11_01
+         //      FRD_07_01
+         //      2.0
+         //      FRCI_08_1
+         //      FRCI_08_02
+      end;
+
+
+      //Разбираем дату и номер документа -------------------------------------------------
+      if not IsNull(_Metal_F->XML_FindField(x_main, 'header'))   then
+           x_header  := _Metal_F->XML_FieldByName(x_main, 'header');
+
+            if not IsNull(_Metal_F->XML_FindField(x_header,'doc_num')) then
+               doc_num:=_Metal_F->XML_FieldByName(x_header,'doc_num');
+            end;
+
+            if (ver = 'FRC' or ver = 'FCD') then
+               if not IsNull(_Metal_F->XML_FindField(x_header, 'doc_date')) then
+                  doc_date:=_Metal_F->XML_FieldByName(x_header,'doc_date');
+               end;
+            else
+               if not IsNull(_Metal_F->XML_FindField(x_header, 'doc_date')) then
+                  x:=_Metal_F->XML_FieldByName(x_header,'doc_date');
+                  doc_date:=_F_PXML->Inp_DateTime(x);
+               end;
+            end;
+
+
+           if not IsNull(_Metal_F->XML_FindField(x_header, 'link'))  then
+              x_link  := _Metal_F->XML_FieldByName(x_header, 'link');
+              _F_PXML->Inp_doc_link(x_link,out_doc_num,out_doc_date,in_doc_num,in_reg_date,InfoStr);
+              // InfoStr тут может сообщать об остутствии тэгов  out_doc_num,out_doc_date
+              if not IsBlank(InfoStr)  then
+                 _F_PXML->Add_Info(ErrList, InfoStr);
+              end;
+           else
+              _F_PXML->Add_Info(ErrList,'В  сообщении отсутствует обязательный тэг <link>, информацию об инициирующем документе (на Ваш исходящий)');
+           end;
+      else
+            _F_PXML->Add_Info(ErrList,'В  сообщении отсутствует обязательный тэг <header>, Заголовок документа');
+      end;
+
+
+      //========================================================================
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'service')) then
+          // Этот тэг есть только в форматах РКИ. В ДЕПО его нет
+          x_service := _Metal_F->XML_FieldByName(x_main, 'service');
+          _F_PXML->Inp_Service(x_service, Info,PRVS_NUM,RECIPIENT,RECIPIENT_NAME,SENDER,SENDER_NAME);
+      end;
+      //--- Занимаемся эмитентом ---------------------------------------------------------
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'issuer')) then
+         x_issuer := _Metal_F->XML_FieldByName(x_main, 'issuer');
+         if (ver = 'FRC' ) then
+             if x_issuer.@RecordCount > 0 then
+                x_issuer.@first;
+                while not x_issuer.@eof do
+                   IssuerType := _Metal_F->XML_FieldByName(x_issuer, 'issuer_type');
+                   if  (IssuerType = '00') then
+                       I_name := 'Эмитент: ';
+                   elsif (IssuerType = '01') then
+                       I_name := 'УК: ';
+                   elsif (IssuerType = '02') then
+                       I_name := 'ПИФ: ';
+                   elsif (IssuerType = '03') then
+                       I_name := 'НПФ: ';
+                   elsif (IssuerType = '04') then
+                       I_name := 'АИФ: ';
+                   end;
+
+                   if ( (IssuerType = '02') or (IssuerType = '04') ) then
+                       x_pri := _Metal_F->XML_FieldByName(x_issuer, 'issuer_name');
+                        _F_PXML -> Inp_Party_Id_Name(x_pri, info, ISSUER_ID, issuer_name);
+                        // Оставил список на  всякий случай. Вдруг потом где понадобится... Карман не тянет
+                        ListAdd(IssuerList,I_name +Str(ISSUER_ID)+';'+issuer_name);
+                   end;
+                   x_issuer.@next;
+                end;
+             end;
+         else
+             issuer_name :=  _Metal_F->XML_FieldByName(x_issuer, 'name');
+             x_id:= _Metal_F->XML_FieldByName(x_issuer, 'id');
+             ISSUER_ID :=_Metal_F->XML_FieldByName(x_id, 'id');
+         end;
+      end;
+      //========================================================================
+      if (ver = 'FRC' or ver = 'FCD') then
+         if not IsBlank(_Metal_F->XML_FindField(x_main, 'author')) then
+            x_author :=  _Metal_F->XML_FieldByName(x_main, 'author');
+             if not IsBlank(_Metal_F->XML_FindField(x_author, 'account_holder')) then
+                  x_account_holder := _Metal_F->XML_FieldByName(x_author, 'account_holder');
+                  if not IsBlank(_Metal_F->XML_FindField(x_account_holder, 'juridical')) then
+                     x_juridical := _Metal_F->XML_FieldByName(x_account_holder, 'juridical');
+                     _F_PXML -> Inp_Juridical(x_juridical,account_holder_NAME);
+                  else
+                     x_individual := _Metal_F->XML_FieldByName(x_account_holder, 'individual');
+                     _F_PXML -> Inp_Individual(x_individual,account_holder_NAME);
+                  end;
+             else
+                 x_registrar := _Metal_F->XML_FieldByName(x_author, 'registrar');
+                  if not IsBlank(_Metal_F->XML_FindField(x_registrar, 'party_dtls')) then
+                     x_party_dtls := _Metal_F->XML_FieldByName(x_registrar, 'party_dtls');
+                     if not IsBlank(_Metal_F->XML_FindField(x_party_dtls, 'juridical')) then
+                        x_juridical := _Metal_F->XML_FieldByName(x_party_dtls, 'juridical');
+                        _F_PXML -> Inp_Juridical(x_juridical,registrar_NAME);
+                     else
+                        x_individual := _Metal_F->XML_FieldByName(x_party_dtls, 'individual');
+                        _F_PXML -> Inp_Individual(x_individual,registrar_NAME);
+                     end;
+                  end;
+
+             end;
+         else
+            // фигня. Ну, нет его. и что?
+            _F_FXML->Add_Info(ErrList,'В  сообщении отсутствует обязательный тэг <author>, содержащий данные о составителе списка');
+         end;
+      else
+       // депозитарий?
+
+         if not IsBlank(_Metal_F->XML_FindField(x_main, 'account_holder')) then
+
+             x_account_holder := _Metal_F->XML_FieldByName(x_main, 'account_holder');
+
+             account_holder_NAME := _Metal_F->XML_FieldByName(x_account_holder, 'name');
+             if not IsBlank(_Metal_F->XML_FindField(x_account_holder, 'individual_or_entity')) then
+               individual_or_entity :=   _Metal_F->XML_FieldByName(x_account_holder, 'individual_or_entity');
+               if   individual_or_entity = 'LEGL' then
+                    individual_or_entity:= 'Юр. лицо';
+               elsif individual_or_entity = 'INDV' then
+                    individual_or_entity:= 'Физ. лицо';
+               else
+                  individual_or_entity := 'Не известно';
+               end;
+             else
+                individual_or_entity := 'Не известно';
+             end;
+         else
+             account_holder_NAME :='Не известно';
+         end;
+
+      end;
+      //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'corporate_action_code')) then
+        // Наименование корпоративного действия
+         corporate_action_code := _Metal_F->XML_FieldByName(x_main, 'corporate_action_code');
+         corporate_action_name := _F_PXML->   GET_CORP_ACTION_NAME(corporate_action_code);
+
+      end;
+      //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'record_date')) then
+        // Дата, на окончание операционного дня, которой составлены данные
+         record_date := _Metal_F->XML_FieldByName(x_main, 'record_date');
+      end;
+      //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      if ver <> 'FRC' then
+       //Назначение предоставляемой информации
+          if not IsBlank(_Metal_F->XML_FindField(x_main, 'message_function')) then
+
+             message_function :=_Metal_F->XML_FieldByName(x_main, 'message_function');
+          end;
+          message_function_name :=_F_PXML->    GET_MESS_FUNCT_NAME(message_function);
+      end;
+         //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'information_indicator')) then
+          if (ver = 'FRC' or ver = 'FCD') then
+             x_information_indicator   := _Metal_F->XML_FieldByName(x_main, 'information_indicator');
+
+//             message_function :=_Metal_F->XML_FieldByName(x_information_indicator, 'message_function');
+//             message_function_name := _F_PXML->    GET_MESS_FUNCT_NAME(message_function);
+              if not IsBlank(_Metal_F->XML_FindField(x_information_indicator, 'information_type_code')) then
+                  information_type_code := _Metal_F->XML_FieldByName(x_information_indicator, 'information_type_code');
+                  if not IsBlank(information_type_code) then
+                      if   information_type_code = 'OWNL' then
+                           information_type_code_name := 'список владельцев';
+                      elsif information_type_code = 'DEPL' then
+                           information_type_code_name := 'список депонентов';
+                      elsif information_type_code = 'INML' then
+                           information_type_code_name := 'список лиц, имеющих право на получение дохода';
+                      elsif information_type_code = 'OTHR' then
+                           information_type_code_name := 'прочее';
+                      end;
+                  end;
+              end;
+
+          else
+            information_indicator   := _Metal_F->XML_FieldByName(x_main, 'information_indicator');
+                      if   information_indicator = 'OWNL' then
+                           information_type_code_name := 'список владельцев';
+                      elsif information_indicator = 'DEPL' then
+                           information_type_code_name := 'список депонентов';
+                      elsif information_indicator = 'INML' then
+                           information_type_code_name := 'список лиц, имеющих право на получение дохода';
+                      elsif information_indicator = 'OTHR' then
+                           information_type_code_name := 'прочее';
+                      end;
+
+             if not IsBlank(_Metal_F->XML_FindField(x_main, 'message_function')) then
+                message_function :=_Metal_F->XML_FieldByName(x_main, 'message_function');
+             else
+                message_function :='';
+             end;
+          end;
+       end;
+      //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      //Разбираем тип и номер счёта ------------------------------------------------------
+      //Счет зарегистрированного лица  / депонента (по которому предоставляется отчет)
+      if ver <> 'FRC' then
+          if not IsNull(_Metal_F->XML_FindField(x_main, 'account_dtls')) then
+
+                x_account_dtls:= _Metal_F->XML_FieldByName(x_main, 'account_dtls');
+                if not isNull(_Metal_F->XML_FindField(x_account_dtls, 'account_id')) then
+                  x_account_id:=_Metal_F->XML_FieldByName(x_account_dtls,'account_id');
+                       NUMBER:=_Metal_F->XML_FieldByName(x_account_id,'id');
+                else
+                   NUMBER:= '';
+                end;
+                  account_type:=_Metal_F->XML_FieldByName(x_account_dtls,'account_type');
+                  account_type_name :=   _F_PXML->      GET_ACCOUNT_TYPE_NAME(account_type);
+          end;
+
+      else
+         account_type_name := '';
+      end;
+
+      //===========================================================================
+      //Если были ошибки, то ничего не делаем и выходим ----------------------------------
+      if ~IsBlank(ErrList) then
+             Warning('При разборе сообщения сформирован список ошибок/предупреждений:'+#13+#10+ErrList);
+         _Metal_F->XML_Close;
+         return(5)
+      end;
+     //===========================================================================
+
+
+      ListAdd(InfoList,'Параметры принимаемого реестра:');
+      ListAdd(InfoList,' ');
+      ListAdd(InfoList,'Версия формата: ' + version);
+      if not IsBlank(SENDER_NAME) then
+         ListAdd(InfoList,'Отправитель списка: ' + SENDER_NAME);
+      end;
+      if not IsBlank(SENDER_NAME) then
+         ListAdd(InfoList,'Получатель списка: ' + RECIPIENT_NAME);
+      end;
+
+      ListAdd(InfoList,'Эмитент: ' + Str(ISSUER_ID)+';'+issuer_name);
+      ListAdd(InfoList,'Наименование корпоративного действия: ' + corporate_action_name);
+      if information_type_code_name <> 'прочее' then
+         ListAdd(InfoList,'Тип предоставляемой информации: ' + information_type_code_name);
+      end;
+      ListAdd(InfoList,'Назначение предоставляемой информации: ' + message_function_name);
+      ListAdd(InfoList,'Дата, на окончание операционного дня, которой составлены данные: ' + Str(record_date));
+
+      if not IsBlank(NUMBER)  then
+         ListAdd(InfoList,'Список раскрытия по счету: ' + NUMBER);
+      end;
+      ListAdd(InfoList,'Продолжать? ');
+
+      if not Question(InfoList) then
+        _Metal_F->XML_Close;
+        return(1);
+      end;
+
+     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     //+++++++++++++++++++++ основной цикл ++++++++++++++++++++++++++++++++++++++++
+      START_NUM := Extract('Данные', [select max(NUM) from OD_DOLS where DOC = :DOC and FOOTER = 3], %doc_id);
+
+      if not IsBlank(_Metal_F->XML_FindField(x_main, 'register_list'))  then
+         x_register_list :=  _Metal_F->XML_FieldByName(x_main, 'register_list');
+
+         All := 0;
+         // Наверно тут надо бы что то попроверять по списку вадельцев...
+         while not   x_register_list.@Eof do
+            INC(All);
+            x_register_list.@Next;
+         end;
+
+         x_register_list.@First;
+         StartProgress('Импорт... ', 'Импорт раскрытия информации по счету ' + %DEPO_2_NAME);
+        //Определяем максимальный номер строки подвала
+
+
+         i := 0;
+         DoProgress(0, i, All);
+         Loaded_Amount := %Start_Amount;
+         while not   x_register_list.@Eof do
+
+            if (ver <> 'FRC' /*and ver <> 'FCD'*/ ) then
+              //ДЕПО
+               Blocked := 0.0;
+               if not IsBlank(_Metal_F->XML_FindField(x_register_list, 'shareholder'))  then
+
+                  x_shareholder := _Metal_F->XML_FieldByName(x_register_list, 'shareholder');
+                  while not   x_shareholder.@Eof do
+
+                     Inp_R_FACE_FCDR_13_01(x_shareholder, ver, OW_ID,S_TYPE, NAME, DATE_BIRTH, INN, D_TYPE ,
+                     D_SER, D_NUM, D_DAT, D_PLACE,MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+                     OGRN, OGRN_D, OGRN_P, DEPO_TYPE);
+                     If STATE<>'' Then
+                         COUNTRY_ID:=Extract( 'Данные', [select ISO_DIG from OD_GOSLIST g where  g.ISO_LAT2=:COUNTRY], STATE);
+                     else
+                         COUNTRY_ID:='643';
+                     end;
+                      if x_shareholder.?bank_prop_rub    then
+                         x_bank_prop_rub := x_shareholder._bank_prop_rub;
+                         B_DEPT := '';
+                         B_DEPT_AC := '';
+                        _F_PXML ->Inp_Bank_prop_rub(x_bank_prop_rub,B_P_NAME,B_P_ACNT,B_NAME,B_BIC,B_CITY,B_P_INN,B_KORR,DOPINFO);
+                    end;
+                    try
+                       with 'Данные' do
+
+          //             ID :=  _F_DEPO_MIX -> IS_IN_EXT_FACE(%doc_id, S_TYPE,   INN,D_SER, D_NUM, OGRN);
+
+                       //if ID = 0 then
+                           ID := Gen_ID('Данные', 'OD_FACES_ID_GEN', 1);
+                           ExecSQL('Данные', [insert into OD_EXT_FACES (
+                           ID, DOC, S_TYPE, NAME, DATE_BIRTH, INN,
+                           DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT, DOC_PLACE,
+                           MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+                           BANK_BIC, BANK_NAME, BANK_KORR, BANK_CITY, BANK_DEPART, BANK_DEPART_ACNT,
+                           BANK_P_INN, BANK_P_NAME, BANK_P_ACNT,
+                           HOME_KLADR, MAIL_KLADR,
+                           OGRN, OGRN_DATE, OGRN_PLACE,
+                           DOP_INFO
+                           ) values(
+                           :ID, :DOC, :S_TYPE, :NAME, :DATE_BIRTH, :INN,
+                           :DOC_TYPE, :DOC_SER, :DOC_NUM, :DOC_DAT, :DOC_PLACE,
+                           :MAIL_ADR, :HOME_ADR, :PHONE, :FAX, :EMAIL, :STATE, :IS_NERES,
+                           :BANK_BIC, :BANK_NAME, :BANK_KORR, :BANK_CITY, :BANK_DEPART, :BANK_DEPART_ACNT,
+                           :BANK_P_INN, :BANK_P_NAME, :BANK_P_ACNT,
+                           :HOME_KLADR, :MAIL_KLADR,
+                           :OGRN, :OGRN_DATE, :OGRN_PLACE,
+                           :DOP_INFO)],
+                           ID, %doc_id, S_TYPE, NAME, DATE_BIRTH, INN,
+                           D_TYPE, D_SER, D_NUM, D_DAT, D_PLACE,
+                           MAIL_ADR,HOME_ADR, PHONE, FAX, EMAIL, COUNTRY_ID, IS_NERES,
+                           B_BIC, B_NAME, B_KORR, B_CITY,  B_DEPT, B_DEPT_AC,
+                           B_P_INN, B_P_NAME, B_P_ACNT,
+                           HOME_KLADR, MAIL_KLADR,
+                           OGRN, OGRN_D, OGRN_P,
+                           DOPINFO);
+
+                       // end;
+
+                          if not IsBlank(_Metal_F->XML_FindField(x_shareholder, 'security_balance'))  then
+                             x_Security_balance := _Metal_F->XML_FieldByName(x_shareholder, 'security_balance');
+                                      Inp_Security_balance_FCDR_13_01(x_Security_balance,SEQ_class, state_reg_num,ISIN, SEC_Code, total, COLI,  COLO,  BLOK,  OTHR);
+                                              if ( state_reg_num = %SHARE_NAME) then SHARE_CODE := state_reg_num; end;
+                                              if IsBlank(SHARE_CODE) then
+                                                  raise('Для выбранного эмитента в справочнике нет ЦБ c номером гос. регистрации (См. входной реестр.) '+ state_reg_num  +'. Входной реестр обработан с ошибками. Рекомендую очистить список.');
+                                              end;
+                                       Blocked := COLI +   COLO + BLOK +  OTHR;
+                                       LINE := _f_bux_op->CREATE_OP_LINE_FULL( D_OPERATION._DOC, Inc(START_NUM), 3);
+                                       if APPLICATION = 'REESTR' then
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_DEPO', %DEPO_2 );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'OWNERID', OW_ID );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'EXT_FACE_', str(ID) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'PLEDGE', str(Blocked) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'AMOUNT_', str(total) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'DEPO_TYPE_3', str(DEPO_TYPE) );
+                                       else
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_DEPO', %DEPO_2 );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_RAZDEL', %PLACE_NUM );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'OWNERID', OW_ID );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'EXT_FACE_', str(ID) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'PLEDGE', str(Blocked) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'SHARE_CODE', SEC_Code );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'AMOUNT_', str(total) );
+                                          _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'DEPO_TYPE_3', str(DEPO_TYPE) );
+                                       end;
+                                       Loaded_Amount := Loaded_Amount +   total;
+                          end;
+                       end; //with 'Данные'
+                    except
+                      Message(Exception.Text);
+                      return(0);
+                    end;
+                      x_shareholder.@Next;
+                  end; // while  not   x_shareholder.@Eof
+               end;
+            else // ver not in  ('FRC') 
+
+                 // РКИ
+               if not IsNull(_Metal_F->XML_FindField(x_register_list, 'account_dtls')) then
+                  x_account_dtls:= _Metal_F->XML_FieldByName(x_register_list, 'account_dtls');
+
+                  if not isNull(_Metal_F->XML_FindField(x_account_dtls, 'account_id')) then
+                    x_account_id :=_Metal_F->XML_FieldByName(x_account_dtls,'account_id');
+                    NUMBER       :=_Metal_F->XML_FieldByName(x_account_id,'id');
+                  else
+                     NUMBER:= '';
+                  end;
+
+                  account_type:=_Metal_F->XML_FieldByName(x_account_dtls,'account_type');
+                  if account_type= 20 or  account_type= 21 then
+                     DEPO_TYPE:=account_type;
+                  else
+                     if APPLICATION = 'REESTR' then
+                        DEPO_TYPE :=           _F_FXML->      Get_REESTR_SUBTYPE_by_Account_Type(account_type);
+                     else
+                        DEPO_TYPE :=           _F_FXML->      Get_DEPO_SUBTYPE_by_Account_Type(account_type);
+                     end;
+                  end;
+               end;
+               if not IsBlank(_Metal_F->XML_FindField(x_register_list, 'shareholder'))  then
+
+                  x_shareholder := _Metal_F->XML_FieldByName(x_register_list, 'shareholder');
+
+                  Inp_R_FACE_FCDR_13_01(x_shareholder, ver, OW_ID,S_TYPE, NAME, DATE_BIRTH, INN, D_TYPE ,
+                  D_SER, D_NUM, D_DAT, D_PLACE,MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+                  OGRN, OGRN_D, OGRN_P);
+               end;
+               if x_shareholder.?bank_prop_rub    then
+                         x_bank_prop_rub := x_shareholder._bank_prop_rub;
+                         B_DEPT := '';
+                         B_DEPT_AC := '';
+                        _F_PXML ->Inp_Bank_prop_rub(x_bank_prop_rub,B_P_NAME,B_P_ACNT,B_NAME,B_BIC,B_CITY,B_P_INN,B_KORR,DOPINFO);
+               end;
+               x_total :=  _Metal_F->XML_FieldByName(x_register_list, 'total');
+               total :=  _Metal_F->XML_FieldByName(x_total, 'units');
+               total :=Replace( total,',','.');
+
+               Blocked := 0.0;
+               if not IsBlank(_Metal_F->XML_FindField(x_register_list,'blocked'))  then
+                   x_blocked :=  _Metal_F->XML_FieldByName(x_register_list, 'blocked');
+                   while not x_blocked.@Eof  do
+
+                      x_quantity :=  _Metal_F->XML_FieldByName(x_blocked, 'quantity');
+                      x_unit :=  _Metal_F->XML_FieldByName(x_quantity, 'units');
+                      x_unit  :=Replace( x_unit ,',','.');
+                      Blocked :=  Blocked + Float(x_unit);
+                      x_blocked.@Next;
+                   end;
+               end;
+                if IsBlank(OW_ID)    then
+                   OW_ID := NUMBER;
+                end;
+
+                ID :=  _F_DEPO_MIX -> IS_IN_EXT_FACE(%doc_id, S_TYPE,   INN,D_SER, D_NUM, OGRN);
+               // Есть он или нет,  Все равно буду вставлять. Возможно отличие в других параметрах
+                // if ID = 0 then
+                    ID := Gen_ID('Данные', 'OD_FACES_ID_GEN', 1);
+                    ExecSQL('Данные', [insert into OD_EXT_FACES (
+                    ID, DOC, S_TYPE, NAME, DATE_BIRTH, INN,
+                    DOC_TYPE, DOC_SER, DOC_NUM, DOC_DAT, DOC_PLACE,
+                    MAIL_ADR, HOME_ADR, PHONE, FAX, EMAIL, STATE, IS_NERES,
+                    BANK_BIC, BANK_NAME, BANK_KORR, BANK_CITY, BANK_DEPART, BANK_DEPART_ACNT,
+                    BANK_P_INN, BANK_P_NAME, BANK_P_ACNT,
+                    HOME_KLADR, MAIL_KLADR,
+                    OGRN, OGRN_DATE, OGRN_PLACE,
+                    DOP_INFO
+                    ) values(
+                    :ID, :DOC, :S_TYPE, :NAME, :DATE_BIRTH, :INN,
+                    :DOC_TYPE, :DOC_SER, :DOC_NUM, :DOC_DAT, :DOC_PLACE,
+                    :MAIL_ADR, :HOME_ADR, :PHONE, :FAX, :EMAIL, :STATE, :IS_NERES,
+                    :BANK_BIC, :BANK_NAME, :BANK_KORR, :BANK_CITY, :BANK_DEPART, :BANK_DEPART_ACNT,
+                    :BANK_P_INN, :BANK_P_NAME, :BANK_P_ACNT,
+                    :HOME_KLADR, :MAIL_KLADR,
+                    :OGRN, :OGRN_DATE, :OGRN_PLACE,
+                    :DOP_INFO)],
+                    ID, %doc_id, S_TYPE, NAME, DATE_BIRTH, INN,
+                    D_TYPE, D_SER, D_NUM, D_DAT, D_PLACE,
+                    MAIL_ADR,HOME_ADR, PHONE, FAX, EMAIL,iif(IS_NERES =1,'', '643'),IS_NERES,
+                    B_BIC, B_NAME, B_KORR, B_CITY,  B_DEPT, B_DEPT_AC,
+                    B_P_INN, B_P_NAME, B_P_ACNT,
+                    HOME_KLADR, MAIL_KLADR,
+                    OGRN, OGRN_D, OGRN_P,
+                    DOPINFO);
+
+                // end;
+
+                LINE := _f_bux_op->CREATE_OP_LINE_FULL( D_OPERATION._DOC, Inc(START_NUM), 3);
+
+                if APPLICATION = 'REESTR' then
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_DEPO', %DEPO_2 );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'OWNERID', OW_ID );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'EXT_FACE_', str(ID) );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'PLEDGE', str(Blocked) );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'AMOUNT_', str(total) );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'DEPO_TYPE_3', str(DEPO_TYPE) );
+                else
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_DEPO', %DEPO_2 );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'FOR_INNER_RAZDEL', %PLACE_NUM );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'OWNERID', OW_ID );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'EXT_FACE_', str(ID) );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'PLEDGE', str(Blocked) );
+
+                    SEC_Code :=  SELF_CODE;
+
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'SHARE_CODE', SEC_Code );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'AMOUNT_', str(total) );
+                   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, LINE, 'DEPO_TYPE_3', str(DEPO_TYPE) );
+
+                end;
+
+                Loaded_Amount := Loaded_Amount +   total;
+
+
+            end; // ver <> 'FRC' then
+
+            DoProgress(0, Inc(i), All);
+
+
+            x_register_list.@Next;
+
+         end;// while not   x_register_list.@Eof
+      end; //not IsBlank(_Metal_F->XML_FindField(x_main, 'register_list'))
+      _Metal_F->XML_Close;
+      return(0);
+   except
+      if IsBlank(ErrList) then
+         ErrList :=  EXCEPTION.Text;
+      else
+         ErrList  := _F_FXML->Add_Info(ErrList, EXCEPTION.Text);
+      end;
+      _Metal_F->XML_Close;
+      propagate;
+   end;
+except
+   _Metal_F->XML_Close;
+   if ~IsBlank(ErrList) then
+       Raise(ErrList);
+   end;
+   propagate;
+end;
+  // try
+end; //function
+
+Loaded_Amount :=0;
+
+var x_main, x_account_holder , account_holder_NAME:='', account_holder_OGRN:='' , BODY , OGRN;
+
+if APPLICATION ='DEPO' then
+  R_DATE := Date(D_OPERATION._R_DATE);
+else
+  R_DATE := Date(D_OPERATION._D_DATE);
+end;
+
+var  IS_OUT := Extract('Данные', [select S.IS_OUT from OD_DOCS D
+                               left join OD_DOC_STATES s on S.ID =  D.STATE
+                               where D.ID =:DOC], D_OPERATION._DOC);
+var PLACE_ID, IS_FIND_OGRN:=0;
+
+    if (IS_OUT ='T') then
+      Message('Запрещен импорт внешних реестров в конечных состояниях обработки документа');
+      return(0);
+    end;
+
+{
+if APPLICATION ='DEPO' then
+     PLACE_NUM := Extract ('Данные', [select NUMBER from OD_CLIENTS where ID=:CHAIN_L2], PLACE_ID);
+     if not Question('Подтвердите импорт раскрытия информации по счету №' + D_OP_LINES_2._DEPO_2_NAME + ',  место: '+PLACE_NUM) then
+        return(0);
+     end;
+
+else
+     if not Question('Подтвердите импорт раскрытия информации по счету №' + D_OP_LINES_2._DEPO_2_NAME ) then
+        return(0);
+     end;
+
+end;
+}
+
+
+ Assert( _Metal_F->OpenDialog( 'Выберите файл с раскрытием ', '',  '*.xml','XML', File_Name ), 'Не выбран файл раскрытия!');
+//self.OEMConvert:=2;
+try
+    _Metal_F->FileToList(File_Name);
+    BODY :=_Metal_F.Globals.L;
+except
+   raise('Ошибка при чтении владельцев из внешнего файла : '+ File_Name + '  ;  ' + EXCEPTION.Text);
+end;
+
+   BODY :=Replace(BODY,'&lt;','<');
+   BODY :=Replace(BODY, '&gt;','>');
+   BODY :=Replace(BODY,'&',' ');
+   x_main   :=_Metal_F->XML_Open(BODY,'');
+   if not IsBlank(_Metal_F->XML_FindField(x_main, 'account_holder')) then
+             x_account_holder := _Metal_F->XML_FieldByName(x_main, 'account_holder');
+             account_holder_NAME := _Metal_F->XML_FieldByName(x_account_holder, 'name');
+             if (x_account_holder.?ogrn) then
+                 account_holder_OGRN := _Metal_F->XML_FieldByName(x_account_holder, 'ogrn');
+             end;
+   else
+             account_holder_NAME :='Не известно';
+   end;
+
+if  not (account_holder_OGRN = '' ) then
+   D_OP_LINES_2.@FIRST;
+   while not D_OP_LINES_2.@EOF do
+        DEPO_2 := D_OP_LINES_2._DEPO_2;
+        OGRN:=Extract('Данные', [select FU.OGRN
+                              from OD_CLIENTS C 
+                              left join OD_FACES F on F.SELF_ID=C.FACE and F.LAST_FLAG=1
+                              left join OD_U_FACES FU on FU.FACE=F.ID
+                              where C.ID=:DEPO_2 ] , DEPO_2) ;
+         if (OGRN = account_holder_OGRN)  then
+            IS_FIND_OGRN:=1;
+            exit;
+        end;
+        D_OP_LINES_2.@NEXT
+   end;
+   if IS_FIND_OGRN=0 then
+      raise('Не найден номинальный держатель с ОГРН= '+ account_holder_OGRN  + '  ;  ' );
+   end;
+end;
+
+
+if D_OP_LINES_2._MUST_OPEN <>1 then
+   if Question('Счет №' + D_OP_LINES_2._DEPO_2_NAME + ' не требует раскрытия информации. Завершить загрузку?')=1 then return(0); end;
+end;
+
+DEPO_2 := D_OP_LINES_2._DEPO_2;
+DEPO_2_NAME := D_OP_LINES_2._DEPO_2_NAME;
+
+if APPLICATION ='DEPO' then
+
+   All_l := Extract('Данные', [select count( *)
+        from OD_DOC_CATS C
+        left join OP_FIELDS F on F.OP = C.ID and F.AS_NAME = 'FOR_INNER_DEPO'
+        left join OD_DOCS D on D.D_CAT=C.ID
+        left join D_OP_VAL V on V.DOC = D.ID and V.DESCR = F.ID
+        left join OP_FIELDS F1 on F1.OP = C.ID and F1.AS_NAME = 'FOR_INNER_RAZDEL'
+        left join D_OP_VAL V1 on V1.DOC = D.ID and V1.DESCR = F1.ID
+        where C.SYS_NAME = 'OP_INF_REESTR' and D.ID = :DOC and V.VAL = :VAL  and V1.VAL =:VAL1 and V1.LINE =V.LINE
+        ],  D_OPERATION._DOC, DEPO_2, PLACE_ID);
+
+   if All_L > 0 then
+      if not Question('Для счета '+ D_OP_LINES_2._DEPO_2_NAME + ' и места '+PLACE_NUM+' уже имеется раскрывающий список. Будем дополнять? (При ответе "нет"  раскрывающий список   будут заменен на список из этого файла)') then
+         VZAMEN := 1;
+      end;
+   end;
+
+else
+
+   All_l := Extract('Данные', [select count( *)
+        from OD_DOC_CATS C
+        left join OP_FIELDS F on F.OP = C.ID and F.AS_NAME = 'FOR_INNER_DEPO'
+        left join OD_DOCS D on D.D_CAT=C.ID
+        left join D_OP_VAL V on V.DOC = D.ID and V.DESCR = F.ID
+        where C.SYS_NAME = 'OP_R_INF_REESTR' and D.ID = :DOC and V.VAL = :VAL
+        ],  D_OPERATION._DOC, DEPO_2);
+
+   if All_L > 0 then
+      if not Question('Для счета '+ D_OP_LINES_2._DEPO_2_NAME +' уже имеется раскрывающий список. Будем дополнять? (При ответе "нет"  раскрывающий список   будут заменен на список из этого файла)') then
+         VZAMEN := 1;
+      end;
+   end;
+
+
+end;
+
+if not IsBlank(D_OP_LINES_2._AMOUNT_ALL)then
+   Amount_All :=Float(D_OP_LINES_2._AMOUNT_ALL);
+else
+   Amount_All :=0.0;
+end;
+
+if not IsBlank(D_OP_LINES_2._AMOUNT_OPENED)then
+    Start_Amount:=Float(D_OP_LINES_2._AMOUNT_OPENED);
+else
+    Start_Amount:=0.0;
+end;
+
+SHARE_NAME:=Extract('Данные', [SELECT S.NUM_REG   FROM  OD_SHARES S 
+                               WHERE  S.ISSUER=:ISSUER and  s.CLASS=10 and S.B_DATE<=:D1 and (S.E_DATE>:D2 or S.B_DATE='01.01.9999') ], ISSUER, R_DATE, R_DATE);
+
+
+try
+   REZ :=  REG_OF_SHAREHOLDER_BY_PARTAD(D_OPERATION._DOC, DEPO_2,DEPO_2_NAME,R_DATE, SHARE_NAME, File_Name, VZAMEN, Start_Amount,PLACE_NUM,Loaded_Amount,  ErrList);
+
+   if REZ > 0 then
+     return(0);
+   end;
+   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, D_OP_LINES_2._ID, 'AMOUNT_OPENED', str(Loaded_Amount) );
+
+   var OLD_FILE;
+
+    OLD_FILE :=  D_OP_LINES_2._FILES;
+    if not IsBlank(OLD_FILE)  then
+       if Length(OLD_FILE +' ; ' +  File_Name) <252 then
+          File_Name := OLD_FILE +' ; ' +  File_Name;
+       end;
+    end;
+   _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, D_OP_LINES_2._ID, 'FILES', File_Name );
+
+
+   if (Round(Loaded_Amount - Amount_All) =0)  then
+       _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, D_OP_LINES_2._ID, 'IS_OPENED', str(1));
+       Message('Счет раскрыт');
+   else
+       _f_bux_op->MODIFY_OP_VAL_LINE( D_OPERATION._DOC, D_OP_LINES_2._ID, 'IS_OPENED', str(0));
+      Warning('Общее Количество ЦБ в раскрывающем  счет списке ( '+Str(Loaded_Amount)+' ) не совпадает с общим количеством ЦБ на раскрываемом счете( '+Str(D_OP_LINES_2._AMOUNT_ALL)+' )!');
+
+   end;
+except
+  Warning('Ошибка при обработке входного файла '+  EXCEPTION.Text);
+end;
+D_OP_LINES_2.@REFRESH;
+D_OP_LINES_3.@REFRESH;

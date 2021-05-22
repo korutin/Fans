@@ -1,0 +1,38 @@
+//Inp_Account_dtls_v04_t(%ds: int; %Way:str; ID:str, acc_type:str; SUBTYPE:int; narrative:str, dop:str, issuer:str, scheme_name:str, Info: str)
+// ------------------------------------------------------------
+// ID           - номер счета 
+// issuer       - код организации с точки зрения которой назначен номер счета ID ('NSDR' - Национальный расчетный депозитарий). Для счетов может не указываться. 
+// scheme_name  - Для счетов может не указываться.
+// acc_type     - тип счета с точки зрения формата FCDR_2017_2
+// SUBTYPE      - тип счета приведенный к кодировке Fansy (не все типы счетов мест хранения есть в справочнике Fansy)
+// narrative    - если НРД-ый тип счета '13' - Прочие счета, то в данном параметре вербальное наименование типа
+// dop          - наименование типа счета "по человечески"
+// Info         - строка с ошибками. если пусто - ошибок не обнаружено.
+// 
+//EKS 11.2020
+
+var  x_account_id, x_account_type, W;
+var InfoFrom := '';
+Info := '';
+ID := acc_type := clear(0);
+narrative    :=  '';
+issuer := scheme_name := clear('');
+
+if %ds.?account_id  then
+     x_account_id :=  %ds._account_id;
+     _F_NXML2->Inp_id_V02_t(x_account_id, ID, issuer, scheme_name);
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не удалось обнаружить обязательный элемент account_id'));
+end;
+
+InfoFrom := '';
+if %ds.?account_type  then
+    x_account_type:= %ds._account_type;
+    W := _F_NXML2->Add_Way(%Way, 'account_type');
+    _F_NXML2->Inp_Account_type_V02_t(x_account_type, W, acc_type, SUBTYPE, dop ,narrative, InfoFrom );
+    if ~isBlank(InfoFrom) then
+        Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, InfoFrom));
+    end;
+else
+    Info:=_F_XML->Add_Info(Info, _F_NXML2->Add_InfoWay(%Way, 'Не удалось обнаружить обязательный элемент account_type'));
+end;

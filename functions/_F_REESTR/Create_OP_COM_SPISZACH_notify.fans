@@ -1,0 +1,198 @@
+// =====
+// Create_OP_COM_SPISZACH_notify(%doc_id, %mute:int, %need3:bool, %status:int; paths:List; NOTIFY_DATE:datetime)
+// %need3 - признак необходимости печтать лист уведомления для УК
+// Контракт функции:
+//     Сформируй нам набор уведомлений в печатной форме по операции с %doc_id. Вызывающий код гарантирует, что %doc_id будет операция Массовая выдача паев
+//     В каких случаях и сколько уведомлений формировать функция должна разобраться сама исходя из входных параметров.
+//==  Формирование уведомления об операции в программе REESTR для категорий "Выдача паев", "Погашение паев"
+//==  Функция накапливает в списке paths значения под переменными: MainDir, SecondDir, ZerodDir
+//==        List('MainDir=','SecondDir=','ZeroDir=')
+// EKS 09.2020
+uses _f_depo;
+var NUM, D_DATE, FROM_FACE:='', DEPO, TO_DEPO, RATE, SUMMA, ADD_SUMMA, REJECT_COUSE,
+    SHARE_TO, SHARE_FROM, ST_NAME, SHARE, AMOUNT, NUMBER, DD_NUM, DD_DATE, WIR_DATE, END_DATE,
+    B_TYPE, B_NUM, B_DATE, AGENT, COMMENT, D_TYPE, CONTRAGENT, ZALOG, AMOUNT_FROM, AMOUNT_TO, CLAIM, 
+    DEPO_ACC, TO_DEPO_ACC, R_DATE, EMI, IS_OBMEN, P_DATE, P_NUM, DD_TYPE, ISSUER, FILENAME,
+    FLR, DIR, LABEL, s:='', DEPO_PLAN, C_NAME, C_SYS_NAME, IsOutReg, SUFX;
+var DOL, NOTIFY_DATE_SAV, KOMU, FOND, Fond_name, FACE, isDEPOinEDO, isTODEPOinEDO, SMS, isEDOCLIENT, kk, cont, LFields0, LFields, All, LOutFilers;
+var AgentOrUk := 1;    // 0 - Направлять нулевой лист Агенту; 1 - направлять нулевой лист УК выдернутой из справочника паев.
+
+paths        := List();
+isDEPOinEDO  := isTODEPOinEDO := false;
+KOMU         := clear('');
+REJECT_COUSE := clear('');
+SUFX         := '';
+
+D_DATE   := _F_DOC->GetDoc_D_DATE(%doc_id);
+SHARE    := _F_BUX_OP->GET_OP_VAL(%doc_id, 'SHARE');
+DEPO     := _f_bux_op->GET_OP_VAL(%doc_id, 'DEPO');
+EMI      := _f_bux_op->GET_OP_VAL(%doc_id, 'EMI');
+AGENT    := _F_BUX_OP->GET_OP_VAL(%doc_id, 'AGENT');
+RATE     := _F_BUX_OP->GET_OP_VAL(%doc_id, 'RATE');
+R_DATE   := _F_BUX_OP->GET_OP_VAL(%doc_id, 'R_DATE');
+FOND     := _F_REPORT->GetShareIssuerID(SHARE);
+FOND_NAME:= _F_REPORT->GetFace(FOND, D_DATE);
+FACE     := Extract('Данные', [select FACE from OD_CLIENTS where ID=:C], DEPO);
+
+if (AgentOrUk = 0) and (~isBlank(AGENT)) then
+    KOMU := AGENT
+else
+    _F_REPORT->GetPIF(FOND, D_DATE);
+    KOMU := _F_REPORT.GetPIF.company;
+end;
+
+DEPO_PLAN   := Extract('Данные', [select ID from OD_ACC_PLANS where WHOS=:W and SYS_NAME='REESTR'], MyFace);
+
+if (%status=0) then
+    REJECT_COUSE := _F_BUX_OP->GET_OP_VAL(%doc_id, 'REJECT_COUSE');
+    SMS := 'Уведомление об отказе от совершения операции '
+else
+    REJECT_COUSE := clear('');
+    SMS := 'Уведомление об операции '    
+end;
+
+NOTIFY_DATE  :=NOTIFY_DATE_SAV :=Datetime(D_DATE);
+if not %mute then
+   //s := Request( 'Уточните дату уведомления', NOTIFY_DATE);
+   s := RequestDateTime('Уточните дату уведомлений', NOTIFY_DATE );
+   if IsBlank(s) then return(-100) end; //Отказ операциониста от выполнения директивы
+   NOTIFY_DATE     := datetime(s);
+   NOTIFY_DATE_SAV := NOTIFY_DATE;
+   if NOTIFY_DATE < datetime(D_DATE) then
+      Warning('Дата уведомления не может быть раньше, чем дата документа');
+      return(-100) //Отказ операциониста от выполнения директивы
+   end
+end;
+
+breakpoint;
+LFields0 := List( 'SHARE='+str(SHARE),
+                  'DEPO='+str(DEPO),
+                  'EMI='+str(EMI),
+                  'RATE='+str(RATE),
+                  'R_DATE='+str(R_DATE),
+                  'NOTIFY_DATE='+str(NOTIFY_DATE),
+                  'REJECT_COUSE='+str(REJECT_COUSE));
+                  
+IsOutReg     := _f_doc->Get_APP_OPTION('IS_OUT_REG')=1; // Ведётся Журнал регистрации исходящих документов
+
+//Признак наличия ЭДО у FACE в Настройках исходящих
+isDEPOinEDO   := _F_OUT_MESS->IsBEDOFormat(FOND, D_DATE, AGENT, FACE);
+//Признак "Способ предоставления выписки" установлен в "По системе ЭДО"
+_F_DEPO->GetClient(DEPO);
+isEDOCLIENT := (_F_DEPO.GetClient.I_MAIL_MOD = 8);    // 8 - По системе ЭДО
+kk          := 1;
+LOutFilers  := List();
+ExtractSQL('Данные', [select count(ID) from OD_DOLS where DOC = :DOC ], %DOC_ID, All);
+if ~%mute then StartProgress('Формирование уведомлений', '...');end;
+for 'Данные' select
+   [select L.ID as DOL, vaf.VAL as AMOUNT, vv.val as DEPO_ACC, vc.val as CLAIM, vc2.val as SUMMA, vc3.val as COMMENT
+    from OD_DOCS d
+        left join OP_FIELDS faf on faf.OP = d.D_CAT and faf.AS_NAME='AMOUNT'
+        left join OP_FIELDS ff  on ff.OP = d.D_CAT and ff.AS_NAME='DEPO_ACC'
+        left join OP_FIELDS fc  on fc.OP = d.D_CAT and fc.AS_NAME='CLAIM'
+        left join OP_FIELDS fc2 on fc2.OP = d.D_CAT and fc2.AS_NAME='SUMMA'
+        left join OP_FIELDS fc3 on fc3.OP = d.D_CAT and fc3.AS_NAME='COMMENT'
+        left join OD_DOLS L on L.DOC=d.ID
+        left join D_OP_VAL vaf on vaf.LINE=l.ID and vaf.DESCR = faf.ID
+        left join D_OP_VAL vv  on vv.LINE=l.ID and vv.DESCR = ff.ID
+        left join D_OP_VAL vc  on vc.LINE=l.ID and vc.DESCR = fc.ID
+        left join D_OP_VAL vc2 on vc2.LINE=l.ID and vc2.DESCR = fc2.ID
+        left join D_OP_VAL vc3 on vc3.LINE=l.ID and vc3.DESCR = fc3.ID
+    where d.ID=:DOC and L.ID is not null]
+   from %DOC_ID
+   into DOL, AMOUNT, DEPO_ACC, CLAIM, SUMMA, COMMENT
+do
+    if IsNull(AMOUNT) then AMOUNT:=0.0 else AMOUNT:=Float(AMOUNT) end;
+    B_TYPE := 23;
+    B_NUM  := 'CRAM.34.213';
+    B_DATE := date('27.09.2020');
+    // ===========================================================================================================
+    // ===========   Нулевой - лист (формируется для УК для некоторых категорий)                      ============
+    // ===========================================================================================================
+    if %need3 then
+        if (~isBlank(KOMU)) then        
+            DIR := _f_depo->ReportDirLabel( DEPO );   //DIR   := OptionsDlg.Export_Dir.Text;
+            LABEL := _f_depo.ReportDirLabel.LABEL;        
+            _f_depo->GetOperReestr( %DOC_ID );
+            if IsOutReg then
+                _f_doc.Make_OutDocFiler.ACCOUNT  := DEPO;
+                _f_doc.Make_OutDocFiler.DOC_DATE := NOTIFY_DATE_SAV;
+                FLR := _f_doc->Make_OutDocFiler(%DOC_ID, NOTIFY_DATE_SAV, KOMU, SMS + C_NAME, 0, FOND); //0 - Начальный ввод (создаем все Исх ЗЖРД в этом состоянии, так как особенность работы Make_OutDocFiler)
+                ExecSQL('Данные', 'update D_FILER set FUND=:F, FUND_NAME = :FN, PASS_KIND = :PK where DOC=:D', Fond, FOND_NAME, 8, FLR);
+            end;
+            SUFX := '_'+iif(isBlank(DEPO_ACC), 'N'+str(kk), str(DEPO_ACC)) +'_UK';
+            //FILENAME := report( 'F_REESTR_notify' );
+            FILENAME := ''; cont := '';
+            LFields := LFields0 + 
+                       List( 'CLAIM=' +str(CLAIM),
+                             'AMOUNT='+str(AMOUNT),
+                             'COMMENT='+str(COMMENT),
+                             'SUMMA='+str(SUMMA),
+                             'DEPO_ACC='+str(DEPO_ACC));                             
+            cont := _F_REESTR->Report_FReestrNotify( %DOC_ID, DIR, LABEL, SUFX, 0, IsOutReg, LFields, FILENAME);
+            self.FileName := FILENAME;
+            out(cont);
+            self.@CLOSE;
+            ListAdd(paths, 'ZerodDir'+str(kk)+'='+FILENAME);
+            ListAdd(paths, 'ZeroDateTime'+str(kk)+'='+str(NOTIFY_DATE_SAV));
+            if IsOutReg then
+                ExecSQL('Данные', 'update OD_DOCS set ID=0, IMAGEFILE=:F where ID=:D', FILENAME, FLR);
+            end;
+            _F_BUX_OP->MODIFY_OP_VAL_LINE(%DOC_ID, DOL, 'NOTIFY_DATE', str(date(NOTIFY_DATE_SAV)));
+            ListAdd(LOutFilers, FLR);
+        end;
+    end;
+    
+    //        =============================================================================================================================
+    // ====================                                  Базовый лист                                   =====================
+    // ======  Не формируем первый лист если операцией является Выдача паев или Погашение паев и счет, участвующий в операции, замешан в ЭДО =====
+    //     ========================================================================================================================
+    if ~isDEPOinEDO or ~isEDOCLIENT then
+        DIR   := _f_depo->ReportDirLabel(DEPO);
+        LABEL := _f_depo.ReportDirLabel.LABEL;
+        if IsOutReg then
+        _f_depo->GetClient(DEPO);
+        _f_depo->GetOperReestr(%DOC_ID);
+        _f_doc.Make_OutDocFiler.ACCOUNT  := DEPO;
+        _f_doc.Make_OutDocFiler.DOC_DATE := NOTIFY_DATE_SAV;
+        FLR := _f_doc->Make_OutDocFiler(%DOC_ID, NOTIFY_DATE_SAV, _f_depo.GetClient.FACE, SMS + C_NAME, 0, _f_depo.GetOperReestr.FUND);   //1- нач.обраб
+        ExecSQL('Данные', 'update D_FILER set FUND=:F, FUND_NAME = :FN where DOC=:D', Fond, FOND_NAME, FLR);
+        end;
+        SUFX  := '_'+iif(isBlank(DEPO_ACC), 'N'+str(kk), str(DEPO_ACC));     // Отчет/действие F_REESTR_NOTIFY видит переменную NUM как глобальную
+        //s := report( 'F_REESTR_notify' );
+        s := ''; cont := '';
+        cont := _F_REESTR->Report_FReestrNotify( %DOC_ID, DIR, LABEL, SUFX, 0, IsOutReg, LFields, s);
+        self.FileName := s;
+        out(cont);
+        self.@CLOSE;
+        ListAdd(paths, 'MainDir='+S);
+        ListAdd(paths, 'MainDateTime='+str(NOTIFY_DATE_SAV));
+        if IsOutReg then
+        ExecSQL('Данные', 'update OD_DOCS set ID=0, IMAGEFILE=:F where ID=:D', S, FLR);
+        end;
+        if (isBlank(FILENAME)) then
+            FILENAME := s
+        else
+            FILENAME := FILENAME+';'+s
+        end;    
+    end;
+    if ~%mute then DoProgress(0, kk, All);end;
+    inc(kk);    
+    //ExecSQL('Данные', 'update OD_DOCS set ID=0, IMAGEFILE=:F, PROC_DATE=:PD where ID=:ID', FILENAME, NOTIFY_DATE_SAV, %DOC_ID);
+end;
+kk := 0;
+While kk<ListCount( kk ) do
+    // Переводим все созданные исходящие ЗЖРД в состояние Начало обработки (зарегистрирован)
+    try
+        FLR := int(ListGet( LOutFilers, kk));
+        ExecSQL('Данные', 'update OD_DOCS set ID=0, STATE = :S where ID=:D', 1, FLR);
+    except dummy
+    end;
+    inc(kk);
+End;
+
+if ~%mute then EndProgress(0) end;
+//try
+//   _f_bux_op->MODIFY_OP_VAL(%DOC_ID, 'NOTIFY_DATE', NOTIFY_DATE);
+//except '' end;
+0
